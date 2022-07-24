@@ -1,0 +1,5 @@
+video files*
+__pycache__*
+.vscode*
+*.DS_Store*
+*.drx
