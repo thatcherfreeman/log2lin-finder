@@ -21,9 +21,7 @@ from typing import Dict, List, Tuple
 # else:
 #   y = base^x + offset
 #
-# intercept = base^cut + offset - slope * cut
-# slope * x + intercept = base^x + offset
-# base ^ x - slope * x = intercept - offset
+# intercept = (base^cut + offset) - slope * cut
 
 
 # y_cut = slope * cut + intercept
@@ -109,11 +107,11 @@ INITIAL_GUESS = exp_parameters(
 
 # INITIAL_GUESS = exp_parameters_simplified(
 #     base=4.0,
-#     offset=0.18,
+#     offset=-1.,
 #     slope=1.0,
 #     intercept=0.0,
 #     cut=-0.25,
-#     temperature=1.0,
+#     temperature=0.2,
 # )
 
 
@@ -162,10 +160,10 @@ class exp_function_simplified(nn.Module):
         self.temperature = nn.parameter.Parameter(torch.tensor(parameters.temperature), requires_grad=True)
 
     def compute_intermediate_values(self):
-        base = 10**(1/self.base)
+        base = self.base
         cut = self.cut
         intercept = torch.pow(base, cut) + self.offset - self.slope * cut
-        return base, intercept
+        return base, intercept, cut
 
     def forward(self, t):
         base, intercept, cut = self.compute_intermediate_values()
@@ -179,8 +177,10 @@ class exp_function_simplified(nn.Module):
             interp = (t > cut).float()
 
         pow_value = torch.pow(base, t) + self.offset
-        lin_value = self.slope * t + intercept
+        lin_value = self.slope * t + self.intercept
         output = interp * pow_value + (1 - interp) * lin_value
+        # output = pow_value
+        output = torch.clamp(output, min=1e-6)
         return output
 
     def reverse(self, y):
@@ -195,9 +195,11 @@ class exp_function_simplified(nn.Module):
             # either 0 or 1
             interp = (y > y_cut).float()
 
-        log_value = torch.log(y - self.offset) / torch.log(base)
-        lin_value = (y - intercept) / self.slope
+        log_value = torch.log(torch.clamp(y - self.offset, min=1e-6)) / torch.log(base)
+        lin_value = (y - self.intercept) / self.slope
         output = interp * log_value + (1 - interp) * lin_value
+        # output = log_value
+        output = torch.clamp(output, 1e-6, 1.0)
         return output
 
     def get_log_parameters(self) -> exp_parameters_simplified:
@@ -227,6 +229,7 @@ class exp_function(nn.Module):
     def compute_intermediate_values(self):
         cut = self.cut
         f = self.cut - (self.e * (torch.pow(10., (self.cut - self.d) / self.c) - self.b) / self.a)
+        # f = self.f
         return cut, f
 
     def forward(self, t):
@@ -247,6 +250,7 @@ class exp_function(nn.Module):
         lin_value = (t - self.f) / self.e
         output = interp * pow_value + (1 - interp) * lin_value
         # output = pow_value
+        output = torch.clamp(output, min=1e-6) #, max=100)
         return output
 
     def reverse(self, x):
@@ -256,10 +260,11 @@ class exp_function(nn.Module):
             interp = torch.sigmoid((x - cut) / self.temperature)
         else:
             interp = (x > cut).float()
-        log_value = self.c * torch.log10(self.a * x + self.b) + self.d
+        log_value = self.c * torch.log10(torch.clamp(self.a * x + self.b, min=1e-6)) + self.d
         lin_value = self.e * x + self.f
         output = interp * log_value + (1 - interp) * lin_value
         # output = log_value
+        output = torch.clamp(output, 1e-6, 1.0)
         return output
 
     def get_log_parameters(self) -> exp_parameters:
@@ -316,7 +321,17 @@ def error_fn_2(y, target_idx, sample_mask):
     delta = torch.abs(y - y_target)
     return torch.mean(delta[sample_mask])
 
+def reconstruction_error(y, y_original, target_idx, sample_mask):
+    # Assume y of shape (batch_size, n_images, 3)
+    # assume y_original of same shape
+    # assume target_idx points to the one with gain 1.0
+    # Assume y and y_original are both the log encoded images, just take MSE.
+    answer_mask = torch.ones_like(y, dtype=bool)
+    answer_mask[:, [target_idx], :] = 0
+    sample_mask = sample_mask & answer_mask & ~torch.isnan(y)
 
+    delta = torch.abs(y - y_original)
+    return torch.mean(delta[sample_mask])
 
 def derive_exp_function_gd(
     images: np.ndarray,
@@ -340,6 +355,7 @@ def derive_exp_function_gd(
     errors = []
     losses = []
     model.train()
+    # model.eval()
     for e in range(epochs):
         print(f"Training epoch {e}")
         with tqdm(total=len(ds)) as bar:
@@ -351,14 +367,31 @@ def derive_exp_function_gd(
                 img_gains = gains(torch.arange(0, pixels.shape[1])).unsqueeze(0) # (1, n_images, 1)
                 sample_mask = pixels < white_point
                 y_pred = model(pixels) * img_gains
+                reconstructed_image = model.reverse(y_pred)
+
 
                 # Ideally all of y_pred would be equal
-                loss = loss_fn(y_pred, ref_image_num, sample_mask)
                 # loss = loss_fn(y_pred, sample_mask)
+                loss = loss_fn(y_pred, ref_image_num, sample_mask)
+                    # + (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2
+                # loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask) \
                 loss.backward()
-                # error = err_fn(y_pred, sample_mask).detach()
-                error = error_fn_2(y_pred, ref_image_num, sample_mask).detach()
+                # try:
+                #     loss.backward()
+                # except:
+                #     print(model.get_log_parameters())
+                #     print((y_pred <= 0).sum())
+                #     print(y_pred.min())
+                #     print(y_pred.max())
+                #     print(torch.isnan(y_pred).sum())
+                #     print(torch.isnan(reconstructed_image).sum())
+                #     assert False
+                # nn.utils.clip_grad_value_(model.parameters(), 1)
                 optim.step()
+
+                # error = err_fn(y_pred, sample_mask).detach()
+                # error = error_fn_2(y_pred, ref_image_num, sample_mask).detach()
+                error = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
 
                 # if e % 10 == 0:
                 bar.update(batch_size)
