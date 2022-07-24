@@ -21,7 +21,7 @@ def plot_images(images, titles):
     num_cols = int(n**0.5) + 1
     num_rows = n // num_cols + 1
     f, axarr = plt.subplots(num_rows, num_cols)
-    f.set_size_inches(16,10)
+    f.set_size_inches(16,9)
     for i, (image, title) in enumerate(zip(images, titles)):
         r,c = i // num_cols, i % num_cols
         axarr[r, c].imshow(image)

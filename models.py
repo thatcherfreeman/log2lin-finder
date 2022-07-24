@@ -13,13 +13,62 @@ from typing import Dict, List, Tuple
 
 
 
-# y = base^x + offset
-# log(y - offset) / log(base) = x
+# y = ((10^((x - d) / c) - b) / a);
+# y = ((10^((x/c) - (d/c)) - b) / a);
+# y = ((10^(x/c))/(a * 10^(d/c)) - b/a);
+# y = (((10^(1/c))^x)/(a * 10^(d/c)) - b/a)
+
+# base = 10^1/c
+# offset = -b/a
+# scale = 1 / (a * 10^(d/c))
+
+# y = scale * base^x + offset
+# x = log((y - offset) / scale) / log(base)
+
+# x = log((y + (b/a)) * (a * 10^(d/c))) / log(base)
+# x = log10((y + (b/a)) * (a * 10^(d/c))) / log10(10^(1/c))
+# x = log10((y + (b/a)) * (a * 10^(d/c))) / ((1/c)log10(10))
+# x = c log10((y + (b/a)) * (a * 10^(d/c)))
+# x = log10(((y + (b/a)) * (a * 10^(d/c)))^c)
+# x = log10(((y + (b/a))^c * (a^c * 10^(d))))
+# x = log10((((ay + b)))^c * (10^(d))))
+# x = log10((((ay + b)))^c) + log10(10^(d))))
+# x = c * log10(ay + b) + d
+
+
+
+
+
+# x = (c * _log10f(a * y + b) + d)
+# x = (c * _log10f(a * y + b) + log10(10^d))
+# x = (_log10f((a * y + b)^c) + log10(10^d))
+# x = _log10f((a * y + b)^c * (10^(1/c))^(cd))
+# x = _log10f((a * y + b)^c * (base)^(cd))
+# x = _log10f((a * y + ba/a)^c * (base)^(cd))
+# x = _log10f((a * (y - offset))^c * (base)^(cd))
+# x = _log10f((a * (y - offset))^c * (base)^(cd))
+
+
+
+# y = ((10^((x - d) / c) - b) / a);
+# x = (c * _log10f(a * y + b) + d)
+# x = (c * _log10f(a * y + b) + log10f(10^d))
+# x = (_log10f((a * y + b)^c) + log10f(10^d))
+# x = (_log10f(10^d * (a * y + b)^c))
+# x = (c * _log10f(10^(d/c) * (a * y + b)))
+# x = (c * _log10f(10^(d/c) * (a * (y + (b / a)))))
+# x = (c * _log10f(g * (y + (b / a)))))
+# x = _log10f((g * (y + (b / a)))^c)
+# x = _log10f((g^c * (y + (b / a)))^c)
+
+
+# y = scale * base^x + offset
+# log((y - offset) / scale) / log(base) = x
 
 # if x < cut:
 #   y = slope * x + intercept
 # else:
-#   y = base^x + offset
+#   y = scale * base^x + offset
 #
 # intercept = (base^cut + offset) - slope * cut
 
@@ -28,12 +77,13 @@ from typing import Dict, List, Tuple
 # if y < y_cut:
 #   x = (y - intercept) / slope
 # else:
-#   x = log(y - offset) / log(base)
+#   x = log((y - offset) / scale) / log(base)
 
 @dataclass
 class exp_parameters_simplified:
     base: float
     offset: float
+    scale: float
     slope: float
     intercept: float
     cut: float
@@ -105,14 +155,23 @@ INITIAL_GUESS = exp_parameters(
     temperature=1.0,
 )
 
-# INITIAL_GUESS = exp_parameters_simplified(
-#     base=4.0,
-#     offset=-1.,
-#     slope=1.0,
-#     intercept=0.0,
-#     cut=-0.25,
-#     temperature=0.2,
-# )
+INITIAL_GUESS = exp_parameters_simplified(
+    # base=11183.0,
+    # offset=2.9e-4,
+    # scale=1.1e-4,
+    # slope=.005,
+    # intercept=.00343,
+    # cut=0.1506,
+    # temperature=1.0,
+
+    base=0.247,
+    offset=2.9e-4,
+    scale=1.1e-4,
+    slope=.005,
+    intercept=.00343,
+    cut=0.1506,
+    temperature=1.0,
+)
 
 
 class pixel_dataset(data.Dataset):
@@ -154,51 +213,61 @@ class exp_function_simplified(nn.Module):
         super(exp_function_simplified, self).__init__()
         self.base = nn.parameter.Parameter(torch.tensor(parameters.base))
         self.offset = nn.parameter.Parameter(torch.tensor(parameters.offset))
+        self.scale = nn.parameter.Parameter(torch.tensor(parameters.scale))
         self.slope = nn.parameter.Parameter(torch.tensor(parameters.slope))
         self.intercept = nn.parameter.Parameter(torch.tensor(parameters.intercept))
         self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
         self.temperature = nn.parameter.Parameter(torch.tensor(parameters.temperature), requires_grad=True)
 
     def compute_intermediate_values(self):
-        base = self.base
+        # f = self.cut - (self.e * (torch.pow(10., (self.cut - self.d) / self.c) - self.b) / self.a)
+        # self.f = nn.parameter.Parameter(f, requires_grad=False)
+
+        # base = torch.pow(10.0, 1/self.c)
+        # offset = -self.b / self.a
+        # scale = 1 / (self.a * torch.pow(10.0, self.d / self.c))
+        # slope = 1 / self.e
+        # intercept = -self.f / self.e
+        # cut = self.e * cut + f
+        base = torch.pow(10.0, 1/self.base)
+        offset = self.offset
+        scale = self.scale
+        slope = self.slope
+        intercept = self.intercept
         cut = self.cut
-        intercept = torch.pow(base, cut) + self.offset - self.slope * cut
-        return base, intercept, cut
+        temperature = self.temperature
+        return base, offset, scale, slope, intercept, cut, temperature
 
     def forward(self, t):
-        base, intercept, cut = self.compute_intermediate_values()
-        self.intercept = nn.parameter.Parameter(intercept, requires_grad=False)
-
+        base, offset, scale, slope, intercept, cut, temperature = self.compute_intermediate_values()
         if self.training:
             # float between 0 and 1
-            interp = torch.sigmoid((t - cut) / torch.exp(self.temperature))
+            interp = torch.sigmoid((t - cut) / torch.exp(temperature))
         else:
             # either 0 or 1
             interp = (t > cut).float()
 
-        pow_value = torch.pow(base, t) + self.offset
-        lin_value = self.slope * t + self.intercept
+        pow_value = scale * torch.pow(base, t) + offset
+        lin_value = slope * t + intercept
         output = interp * pow_value + (1 - interp) * lin_value
-        # output = pow_value
+        output = pow_value
         output = torch.clamp(output, min=1e-6)
         return output
 
     def reverse(self, y):
-        base, intercept, cut = self.compute_intermediate_values()
-        self.intercept = nn.parameter.Parameter(intercept, requires_grad=False)
-
-        y_cut = self.slope * cut + intercept
+        base, offset, scale, slope, intercept, cut, temperature = self.compute_intermediate_values()
+        y_cut = slope * cut + intercept
         if self.training:
             # float between 0 and 1
-            interp = torch.sigmoid((y - y_cut) / self.temperature)
+            interp = torch.sigmoid((y - y_cut) / temperature)
         else:
             # either 0 or 1
             interp = (y > y_cut).float()
 
-        log_value = torch.log(torch.clamp(y - self.offset, min=1e-6)) / torch.log(base)
-        lin_value = (y - self.intercept) / self.slope
+        log_value = torch.log(torch.clamp((y - offset) / scale, min=1e-6)) / torch.log(base)
+        lin_value = (y - intercept) / slope
         output = interp * log_value + (1 - interp) * lin_value
-        # output = log_value
+        output = log_value
         output = torch.clamp(output, 1e-6, 1.0)
         return output
 
@@ -206,6 +275,7 @@ class exp_function_simplified(nn.Module):
         return exp_parameters_simplified(
             base = float(self.base),
             offset = float(self.offset),
+            scale = float(self.scale),
             slope = float(self.slope),
             intercept = float(self.intercept),
             cut = float(self.cut),
@@ -230,6 +300,7 @@ class exp_function(nn.Module):
         cut = self.cut
         f = self.cut - (self.e * (torch.pow(10., (self.cut - self.d) / self.c) - self.b) / self.a)
         # f = self.f
+        self.f = nn.parameter.Parameter(f, requires_grad=False)
         return cut, f
 
     def forward(self, t):
@@ -237,33 +308,32 @@ class exp_function(nn.Module):
         # (t > e * cut + f) ? (pow(10, (t - d) / c) - b) / a: (t - f) / e
         # self.f = self.cut - (self.e * (torch.pow(10., (self.cut - self.d) / self.c) - self.b) / self.a)
         cut, f = self.compute_intermediate_values()
-        self.f = nn.parameter.Parameter(f, requires_grad=False)
 
         if self.training:
             # float between 0 and 1
-            interp = torch.sigmoid((t - (self.e * cut + self.f)) / self.temperature)
+            interp = torch.sigmoid((t - (self.e * cut + f)) / self.temperature)
         else:
             # either 0 or 1
             interp = (t > (self.e * cut + self.f)).float()
 
         pow_value = (torch.pow(10., (t - self.d) / self.c) - self.b) / self.a
-        lin_value = (t - self.f) / self.e
+        lin_value = (t - f) / self.e
         output = interp * pow_value + (1 - interp) * lin_value
-        # output = pow_value
+        output = pow_value
         output = torch.clamp(output, min=1e-6) #, max=100)
         return output
 
     def reverse(self, x):
         cut, f = self.compute_intermediate_values()
-        self.f = nn.parameter.Parameter(f, requires_grad=False)
+
         if self.training:
             interp = torch.sigmoid((x - cut) / self.temperature)
         else:
             interp = (x > cut).float()
         log_value = self.c * torch.log10(torch.clamp(self.a * x + self.b, min=1e-6)) + self.d
-        lin_value = self.e * x + self.f
+        lin_value = self.e * x + f
         output = interp * log_value + (1 - interp) * lin_value
-        # output = log_value
+        output = log_value
         output = torch.clamp(output, 1e-6, 1.0)
         return output
 
@@ -344,7 +414,7 @@ def derive_exp_function_gd(
 ) -> Tuple[nn.Module, nn.Module]:
 
     # torch.autograd.set_detect_anomaly(True)
-    model = exp_function(INITIAL_GUESS)
+    model = exp_function_simplified(INITIAL_GUESS)
     gains = gain_table(images.shape[0], ref_image_num, exposures)
     ds = pixel_dataset(images)
     dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
@@ -355,7 +425,7 @@ def derive_exp_function_gd(
     errors = []
     losses = []
     model.train()
-    # model.eval()
+    model.eval()
     for e in range(epochs):
         print(f"Training epoch {e}")
         with tqdm(total=len(ds)) as bar:
@@ -371,9 +441,9 @@ def derive_exp_function_gd(
 
 
                 # Ideally all of y_pred would be equal
-                # loss = loss_fn(y_pred, sample_mask)
-                loss = loss_fn(y_pred, ref_image_num, sample_mask)
-                    # + (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2
+                loss = percent_error_masked(y_pred, sample_mask)
+                # loss = percent_error_target(y_pred, ref_image_num, sample_mask)
+                loss += (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2
                 # loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask) \
                 loss.backward()
                 # try:
@@ -395,7 +465,7 @@ def derive_exp_function_gd(
 
                 # if e % 10 == 0:
                 bar.update(batch_size)
-                bar.set_postfix(loss=float(loss), error=float(error), cut=float(model.get_log_parameters().cut), temperature=float(model.get_log_parameters().temperature), lr=sched.get_last_lr())
+                bar.set_postfix(loss=float(loss), error=float(error), params=model.get_log_parameters(), lr=sched.get_last_lr())
                 errors.append(float(error))
                 losses.append(float(loss))
 
