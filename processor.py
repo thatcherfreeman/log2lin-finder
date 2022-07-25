@@ -107,7 +107,7 @@ if __name__ == "__main__":
         epochs=args.num_epochs,
         lr=args.learning_rate,
         use_scheduler=not args.no_lrscheduler,
-        exposures=torch.tensor([-4., -3., -2., -1., 0., 1., 2., 3.,]).unsqueeze(1),
+        # exposures=torch.tensor([-4., -3., -2., -1., 0., 1., 2., 3.,]).unsqueeze(1),
     )
 
     print(gains.get_gains())

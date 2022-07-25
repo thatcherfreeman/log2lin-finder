@@ -233,7 +233,7 @@ class gain_table(nn.Module):
         self.table.weight.data.fill_(0.0)
         if exposures is not None:
             self.table.weight.data = exposures
-            self.table.requires_grad_(False)
+            # self.table.requires_grad_(False)
 
     def forward(self, x):
         # check that x is not equal to the frozen one, look up the others in the table.
