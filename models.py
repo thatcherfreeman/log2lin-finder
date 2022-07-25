@@ -89,7 +89,44 @@ class exp_parameters_simplified:
     cut: float
     temperature: float = 1.
 
+    def __str__(self):
+        return f"base={self.base:0.3f} offset={self.offset:0.3f} scale={self.scale:0.3f} slope={self.slope:0.3f} intercept={self.intercept:0.3f} cut={self.cut:0.3f} temperature={self.temperature:0.3f}"
 
+    def log_curve_to_str(self):
+        output = f"""
+const float base = {self.base};
+const float offset = {self.offset};
+const float scale = {self.scale};
+const float slope = {self.slope};
+const float intercept = {self.intercept};
+const float cut = {self.cut};
+
+
+const float y_cut = slope * cut + intercept
+if (y < y_cut) {{
+    return = (y - intercept) / slope;
+}} else {{
+    return _log10f((y - offset) / scale) / _log10f(base);
+}}
+        """
+        return output
+
+    def exp_curve_to_str(self):
+        output = f"""
+const float base = {self.base};
+const float offset = {self.offset};
+const float scale = {self.scale};
+const float slope = {self.slope};
+const float intercept = {self.intercept};
+const float cut = {self.cut};
+
+f (t < cut) {{
+    return slope * x + intercept;
+}} else {{
+    return _powf(base, x) * scale + offset;
+}}
+"""
+        return output
 
 
 @dataclass
@@ -229,13 +266,15 @@ class exp_function_simplified(nn.Module):
         # slope = 1 / self.e
         # intercept = -self.f / self.e
         # cut = self.e * cut + f
-        base = torch.pow(10.0, 1/self.base)
+        base = torch.pow(10.0, 1.0/self.base)
         offset = self.offset
         scale = self.scale
-        slope = self.slope
         intercept = self.intercept
         cut = self.cut
+        slope = torch.abs(scale * torch.pow(base, cut) + offset - intercept) / torch.abs(cut)
         temperature = self.temperature
+
+        # self.cut = nn.parameter.Parameter(cut, requires_grad=False)
         return base, offset, scale, slope, intercept, cut, temperature
 
     def forward(self, t):
@@ -250,7 +289,8 @@ class exp_function_simplified(nn.Module):
         pow_value = scale * torch.pow(base, t) + offset
         lin_value = slope * t + intercept
         output = interp * pow_value + (1 - interp) * lin_value
-        output = pow_value
+        # output = pow_value
+        # output = lin_value
         output = torch.clamp(output, min=1e-6)
         return output
 
@@ -267,19 +307,21 @@ class exp_function_simplified(nn.Module):
         log_value = torch.log(torch.clamp((y - offset) / scale, min=1e-6)) / torch.log(base)
         lin_value = (y - intercept) / slope
         output = interp * log_value + (1 - interp) * lin_value
-        output = log_value
+        # output = log_value
+        # output = lin_value
         output = torch.clamp(output, 1e-6, 1.0)
         return output
 
     def get_log_parameters(self) -> exp_parameters_simplified:
+        base, offset, scale, slope, intercept, cut, temperature = self.compute_intermediate_values()
         return exp_parameters_simplified(
-            base = float(self.base),
-            offset = float(self.offset),
-            scale = float(self.scale),
-            slope = float(self.slope),
-            intercept = float(self.intercept),
-            cut = float(self.cut),
-            temperature = float(self.temperature),
+            base = float(base),
+            offset = float(offset),
+            scale = float(scale),
+            slope = float(slope),
+            intercept = float(intercept),
+            cut = float(cut),
+            temperature = float(temperature),
         )
 
 
@@ -400,7 +442,8 @@ def reconstruction_error(y, y_original, target_idx, sample_mask):
     answer_mask[:, [target_idx], :] = 0
     sample_mask = sample_mask & answer_mask & ~torch.isnan(y)
 
-    delta = torch.abs(y - y_original)
+    y_target = y_original[:, [target_idx], :] # (batch_size, 1, 3), just the target image
+    delta = torch.abs(y - y_target)
     return torch.mean(delta[sample_mask])
 
 def derive_exp_function_gd(
@@ -441,10 +484,10 @@ def derive_exp_function_gd(
 
 
                 # Ideally all of y_pred would be equal
-                loss = percent_error_masked(y_pred, sample_mask)
+                # loss = percent_error_masked(y_pred, sample_mask)
                 # loss = percent_error_target(y_pred, ref_image_num, sample_mask)
+                loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
                 loss += (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2
-                # loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask) \
                 loss.backward()
                 # try:
                 #     loss.backward()

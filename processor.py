@@ -113,7 +113,7 @@ if __name__ == "__main__":
     print(gains.get_gains())
     found_parameters = model.get_log_parameters()
     print(found_parameters)
-    # print(found_parameters.exp_curve_to_str())
+    print(found_parameters.exp_curve_to_str())
 
 
     # Try a visual comparison of two images.
@@ -122,6 +122,7 @@ if __name__ == "__main__":
     plot_images(input_images, titles)
 
     model.eval()
+    # model.train()
     output_images = []
     titles = []
     with torch.no_grad():
