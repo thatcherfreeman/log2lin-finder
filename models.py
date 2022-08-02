@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 import argparse
 import sys
 from typing import Dict, List, Tuple
-
+from lut_parser import lut_1d_properties
 
 
 
@@ -209,6 +209,14 @@ INITIAL_GUESS = exp_parameters_simplified(
     cut=0.1506,
     temperature=1.0,
 )
+
+def dataset_from_1d_lut(lut: lut_1d_properties) -> data.dataset:
+    x = torch.arange(0, lut.size, dtype=torch.float) * \
+        (lut.domain_max[0] - lut.domain_min[0]) / \
+        (lut.size - 1) + \
+        lut.domain_min[0]
+    y = torch.tensor(lut.contents[:, 0], dtype=torch.float)
+    return data.TensorDataset(x, y)
 
 
 class pixel_dataset(data.Dataset):
@@ -446,11 +454,52 @@ def reconstruction_error(y, y_original, target_idx, sample_mask):
     delta = torch.abs(y - y_target)
     return torch.mean(delta[sample_mask])
 
+def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True) -> nn.Module:
+    # torch.autograd.set_detect_anomaly(True)
+    model = exp_function_simplified(INITIAL_GUESS)
+    dl = data.DataLoader(dataset_from_1d_lut(lut), batch_size=lut.size)
+    loss_fn = nn.L1Loss(reduction='mean')
+    optim = torch.optim.Adam(model.parameters(), lr=lr)
+    sched = torch.optim.lr_scheduler.MultiplicativeLR(optim, lambda x: (0.5 if x % 3000 == 0 else 1.0))
+    errors = []
+    losses = []
+    model.train()
+    model.eval()
+    with tqdm(total=epochs) as bar:
+        for e in range(epochs):
+            for x, y in dl:
+                optim.zero_grad()
+                y_pred = model(x)
+                loss = torch.log(loss_fn(torch.log(y_pred + 0.5), torch.log(y + 0.5)))
+
+                error = loss_fn(y, y_pred).detach()
+                loss.backward()
+                optim.step()
+            if use_scheduler:
+                sched.step()
+
+            if e % 10 == 0:
+                bar.update(10)
+                bar.set_postfix(loss=float(loss), error=float(error), params=model.get_log_parameters(), lr=sched.get_last_lr())
+                errors.append(float(error))
+                losses.append(float(loss))
+
+
+    plt.figure()
+    plt.xlim(0, epochs)
+    plt.ylim(min(errors[-1], losses[-1]), max(errors[0], losses[0]))
+    plt.plot(range(0, epochs, 10), errors)
+    plt.plot(range(0, epochs, 10), losses)
+    plt.show()
+
+    return model
+
+
 def derive_exp_function_gd(
     images: np.ndarray,
     ref_image_num: int,
     white_point: float,
-    epochs: int = 100,
+    epochs: int = 20,
     lr=1e-3,
     use_scheduler=True,
     exposures=None,
@@ -461,7 +510,6 @@ def derive_exp_function_gd(
     gains = gain_table(images.shape[0], ref_image_num, exposures)
     ds = pixel_dataset(images)
     dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
-    loss_fn = percent_error_target
 
     optim = torch.optim.Adam(list(model.parameters()) + list(gains.parameters()), lr=lr)
     sched = torch.optim.lr_scheduler.MultiplicativeLR(optim, lambda x: (0.5 if x % 3000 == 0 else 1.0))
@@ -489,24 +537,12 @@ def derive_exp_function_gd(
                 loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
                 loss += (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2
                 loss.backward()
-                # try:
-                #     loss.backward()
-                # except:
-                #     print(model.get_log_parameters())
-                #     print((y_pred <= 0).sum())
-                #     print(y_pred.min())
-                #     print(y_pred.max())
-                #     print(torch.isnan(y_pred).sum())
-                #     print(torch.isnan(reconstructed_image).sum())
-                #     assert False
-                # nn.utils.clip_grad_value_(model.parameters(), 1)
                 optim.step()
 
                 # error = err_fn(y_pred, sample_mask).detach()
                 # error = error_fn_2(y_pred, ref_image_num, sample_mask).detach()
                 error = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
 
-                # if e % 10 == 0:
                 bar.update(batch_size)
                 bar.set_postfix(loss=float(loss), error=float(error), params=model.get_log_parameters(), lr=sched.get_last_lr())
                 errors.append(float(error))
@@ -519,7 +555,6 @@ def derive_exp_function_gd(
 
     plt.figure()
     plt.xlim(0, len(errors))
-    # plt.ylim(min(errors[-1], losses[-1]), max(errors[0], losses[0]))
     plt.plot(range(len(errors)), errors)
     plt.plot(range(len(losses)), losses)
     plt.show()

@@ -4,6 +4,7 @@ import numpy as np
 import argparse
 
 import models
+from lut_parser import lut_1d_properties, read_1d_lut
 import torch
 import matplotlib.pyplot as plt
 
@@ -15,50 +16,8 @@ def read_img(fn):
     image = image[:, :, ::-1]
     return image
 
-def plot_images(images, titles):
-    n = len(images)
-    # images of shape (n, h, w, c)
-    num_cols = int(n**0.5) + 1
-    num_rows = n // num_cols + 1
-    f, axarr = plt.subplots(num_rows, num_cols)
-    f.set_size_inches(16,9)
-    for i, (image, title) in enumerate(zip(images, titles)):
-        r,c = i // num_cols, i % num_cols
-        axarr[r, c].imshow(image)
-        axarr[r, c].set_title(title, fontsize=5)
-        axarr[r, c].set_xticks([])
-        axarr[r, c].set_yticks([])
-    plt.show()
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--num_epochs',
-        default=1,
-        required=False,
-        type=int,
-        help='number of epochs to train for.',
-    )
-    parser.add_argument(
-        '--dir_path',
-        default=None,
-        help='Specify the directory to load the images from.',
-    )
-    parser.add_argument(
-        '--learning_rate',
-        default=1e-4,
-        type=float,
-        help='Specify the gradient descent learning rate.',
-        required=False,
-    )
-    parser.add_argument(
-        '--no_lrscheduler',
-        action='store_false',
-        help='Add flag to avoid learning rate scheduler. Do this if the step size goes to zero before convergeance.',
-        required=False,
-    )
-    args = parser.parse_args()
-    print(args)
+def fit_bracketed_exposures(args):
     epochs = args.num_epochs
 
     # Read in the folder of tiff files.
@@ -122,7 +81,6 @@ if __name__ == "__main__":
     plot_images(input_images, titles)
 
     model.eval()
-    # model.train()
     output_images = []
     titles = []
     with torch.no_grad():
@@ -134,3 +92,118 @@ if __name__ == "__main__":
             output_images.append(log_image.detach().numpy())
             titles.append(f'file {fn} gain {float(gain)}')
     plot_images(np.stack(output_images, axis=0), titles)
+
+
+def fit_lut_file(args):
+    epochs = args.num_epochs
+    fn = args.lut_file
+    if args.lut_file == None:
+        parser.print_help()
+
+    # Train model
+    lut = read_1d_lut(fn)
+    model = models.derive_exp_function_gd_lut(
+        lut,
+        epochs=epochs,
+        lr=args.learning_rate,
+        use_scheduler=(not args.no_lrscheduler),
+    )
+    print(model.get_log_parameters())
+
+    # Display log2lin model's output curve vs original LUT
+    ds = models.dataset_from_1d_lut(lut)
+    x, y = ds.tensors
+
+    model.eval()
+    y_pred = model(x).detach().numpy()
+    model.train()
+    y_pred_interp = model(x).detach().numpy()
+    x_np = x.numpy()
+    y_np = y.numpy()
+    plt.figure()
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.plot(x_np, y_np, label='ground truth lut')
+    plt.plot(x_np, y_pred, label='model eval mode')
+    plt.plot(x_np, y_pred_interp, label='model train mode')
+    plt.legend()
+    plt.show()
+
+    # Same as above but with log scale
+    plt.figure()
+    plt.plot(x_np, np.log(y_np), label='ground truth lut')
+    plt.plot(x_np, np.log(y_pred), label='model eval mode')
+    plt.plot(x_np, np.log(y_pred) - np.log(y_np), label='Log error')
+    plt.legend()
+    plt.show()
+
+    # Apply lin2log curve to LUT, expect straight line.
+    model.eval()
+    x_restored = model.reverse(y).detach().numpy()
+    plt.figure()
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.plot(x_np, x_np, label='expected')
+    plt.plot(x_np, x_restored, label='lin2log(y)')
+    plt.legend()
+    plt.show()
+
+
+
+def plot_images(images, titles):
+    n = len(images)
+    # images of shape (n, h, w, c)
+    num_cols = int(n**0.5) + 1
+    num_rows = n // num_cols + 1
+    f, axarr = plt.subplots(num_rows, num_cols)
+    f.set_size_inches(16,9)
+    for i, (image, title) in enumerate(zip(images, titles)):
+        r,c = i // num_cols, i % num_cols
+        axarr[r, c].imshow(image)
+        axarr[r, c].set_title(title, fontsize=5)
+        axarr[r, c].set_xticks([])
+        axarr[r, c].set_yticks([])
+    plt.show()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--num_epochs',
+        default=1,
+        required=False,
+        type=int,
+        help='number of epochs to train for.',
+    )
+    parser.add_argument(
+        '--dir_path',
+        default=None,
+        help='Specify the directory to load the images from.',
+    )
+    parser.add_argument(
+        '--lut_file',
+        default=None,
+        help='Specify the 1D file to load from.',
+    )
+    parser.add_argument(
+        '--learning_rate',
+        default=1e-4,
+        type=float,
+        help='Specify the gradient descent learning rate.',
+        required=False,
+    )
+    parser.add_argument(
+        '--no_lrscheduler',
+        action='store_false',
+        help='Add flag to avoid learning rate scheduler. Do this if the step size goes to zero before convergeance.',
+        required=False,
+    )
+    args = parser.parse_args()
+    print(args)
+
+    if args.dir_path is not None and args.lut_file is None:
+        fit_bracketed_exposures(args)
+    elif args.lut_file is not None and args.dir_path is None:
+        fit_lut_file(args)
+    else:
+        print("Please specify one of --dir_path or --lut_file!")
+
