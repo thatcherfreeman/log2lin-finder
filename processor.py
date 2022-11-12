@@ -3,18 +3,21 @@ import os
 import numpy as np
 import argparse
 
-import models
 from lut_parser import lut_1d_properties, read_1d_lut
 import torch
 import matplotlib.pyplot as plt
 
+import models
 
 
-def read_img(fn):
-    image = cv2.imread(fn, -1)
-    # cv2 reads in images as H,W,BGR rather than RGB, need to reorder the color channels
-    image = image[:, :, ::-1]
-    return image
+def open_image(image_fn: str) -> np.ndarray:
+    os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
+    img: np.ndarray = cv2.imread(image_fn, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+    print(f"Read image data type of {img.dtype}")
+    if img.dtype == np.uint8 or img.dtype == np.uint16:
+        img = img.astype(np.float32) / np.iinfo(img.dtype).max
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    return img
 
 
 def fit_bracketed_exposures(args):
@@ -28,16 +31,16 @@ def fit_bracketed_exposures(args):
     print(f"Reading files at directory {dir_path}")
     for fn in files:
         print("file: ", os.path.join(dir_path, fn))
-        all_images.append(read_img(os.path.join(dir_path, fn)))
+        all_images.append(open_image(os.path.join(dir_path, fn)))
     print(f"Found {len(all_images)} files.")
 
     # Identify which one has the most white pixels and the white point.
     all_images = np.stack(all_images, axis=0)
     print(f"Found data type {all_images.dtype}")
-    if all_images.dtype != float:
+    if all_images.dtype not in (float, np.float32):
         print("Converting image datatype to float.")
         format_max = np.iinfo(all_images.dtype).max
-        all_images = all_images.astype(float) / float(format_max)
+        all_images = all_images.astype(np.float32) / format_max
 
     n, h, w, c = all_images.shape
     gray_images = np.mean(all_images, axis=3)
@@ -66,7 +69,7 @@ def fit_bracketed_exposures(args):
         epochs=args.num_epochs,
         lr=args.learning_rate,
         use_scheduler=not args.no_lrscheduler,
-        # exposures=torch.tensor([-4., -3., -2., -1., 0., 1., 2., 3.,]).unsqueeze(1),
+        exposures=torch.tensor([-4., -3., -2., -1., 0., 1., 2., 3.,]).unsqueeze(1),
     )
 
     print(gains.get_gains())
@@ -186,7 +189,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--learning_rate',
-        default=1e-4,
+        default=1e-3,
         type=float,
         help='Specify the gradient descent learning rate.',
         required=False,
