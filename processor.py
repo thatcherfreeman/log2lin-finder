@@ -32,6 +32,8 @@ def fit_bracketed_exposures(args):
     for fn in files:
         print("file: ", os.path.join(dir_path, fn))
         all_images.append(open_image(os.path.join(dir_path, fn)))
+    if args.blur_amt > 0:
+        all_images = [cv2.blur(img, (args.blur_amt, args.blur_amt)) for img in all_images]
     print(f"Found {len(all_images)} files.")
 
     # Identify which one has the most white pixels and the white point.
@@ -94,7 +96,41 @@ def fit_bracketed_exposures(args):
             # gamma_image = (32*lin_image)**0.45
             output_images.append(log_image.detach().numpy())
             titles.append(f'file {fn} gain {float(gain)}')
-    plot_images(np.stack(output_images, axis=0), titles)
+    output_images = np.stack(output_images, axis=0)
+    plot_images(output_images, titles)
+
+    # Plot the median image vs the reconstructed exposure compensated images to see the accuracy
+    sampled_coords = np.random.choice(input_images.shape[1], 1000), np.random.choice(input_images.shape[2], 1000)
+    sampled_input = np.mean(input_images[median_image_idx, sampled_coords[0], sampled_coords[1], :], axis=1)
+    for i in range(output_images.shape[0]):
+        sampled_output = np.mean(output_images[i, sampled_coords[0], sampled_coords[1], :], axis=1) # (1000, 3)
+        plt.scatter(sampled_input, sampled_output, label=f"Image {i}", marker='.', alpha=0.1, edgecolors=None)
+    plt.plot([np.min(sampled_input), np.max(sampled_input)], [np.min(sampled_input), np.max(sampled_input)], color='black')
+    plt.title("comparison of images")
+    plt.legend()
+    plt.show()
+
+    # Plot the log curve as a sanity check
+    x_values = np.linspace(start=-8, stop=8, num=4000)
+    x_values_lin = 0.18 * (2**x_values)
+    with torch.no_grad():
+        y_values = model.reverse(torch.tensor(x_values_lin)).detach().numpy()
+        cut = model.get_log_parameters().cut
+    plt.plot(x_values[y_values < cut], y_values[y_values < cut], color='red')
+    plt.plot(x_values[y_values >= cut], y_values[y_values >= cut], color='blue')
+    plt.axvline(x=0.0)
+    plt.axhline(y=0.0)
+    plt.title("Log curve")
+    plt.show()
+
+    plt.plot(x_values_lin[y_values < cut], y_values[y_values < cut], color='red')
+    plt.plot(x_values_lin[y_values >= cut], y_values[y_values >= cut], color='blue')
+    plt.axvline(x=0.18, alpha=0.5)
+    plt.axvline(x=0.0)
+    plt.axhline(y=0.0)
+    plt.title("lin/log curve")
+    plt.show()
+
 
 
 def fit_lut_file(args):
@@ -198,6 +234,13 @@ if __name__ == "__main__":
         '--no_lrscheduler',
         action='store_false',
         help='Add flag to avoid learning rate scheduler. Do this if the step size goes to zero before convergeance.',
+        required=False,
+    )
+    parser.add_argument(
+        '--blur_amt',
+        default=0,
+        type=int,
+        help='specifies amount to blur input images, to reduce noise.',
         required=False,
     )
     args = parser.parse_args()

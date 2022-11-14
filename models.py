@@ -52,7 +52,7 @@ const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
 
-f (t < cut) {{
+if (t < cut) {{
     return slope * x + intercept;
 }} else {{
     return _powf(base, x) * scale + offset;
@@ -61,7 +61,7 @@ f (t < cut) {{
         return output
 
 INITIAL_GUESS = exp_parameters_simplified(
-    base=0.247,
+    base=0.376,
     offset=2.9e-4,
     scale=1.1e-4,
     slope=.005,
@@ -100,7 +100,7 @@ class gain_table(nn.Module):
         self.table.weight.data.fill_(0.0)
         if exposures is not None:
             self.table.weight.data = exposures
-            self.table.requires_grad_(False)
+            # self.table.requires_grad_(False)
 
     def forward(self, x):
         # check that x is not equal to the frozen one, look up the others in the table.
@@ -216,6 +216,7 @@ def reconstruction_error(y, y_original, target_idx, sample_mask):
 
     y_target = y_original[:, [target_idx], :] # (batch_size, 1, 3), just the target image
     delta = torch.abs(y - y_target)
+    # delta = (y - y_target)**2
     return torch.mean(delta[sample_mask])
 
 def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True) -> nn.Module:
@@ -228,7 +229,6 @@ def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-
     errors = []
     losses = []
     model.train()
-    model.eval()
     with tqdm(total=epochs) as bar:
         for e in range(epochs):
             for x, y in dl:
