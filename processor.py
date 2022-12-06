@@ -61,16 +61,17 @@ def fit_bracketed_exposures(args):
     # identify median brightness image.
     image_brightness = np.mean(all_images.reshape(n, h*w*c), axis=1)
     image_brightness_sort_idx = np.argsort(image_brightness)
-    median_image_idx = image_brightness_sort_idx[int(0.5 * len(image_brightness_sort_idx))]
+    median_image_idx = int(0.5 * len(image_brightness_sort_idx))
     all_images = all_images[image_brightness_sort_idx]
     files = np.array(files)[image_brightness_sort_idx]
+    image_brightness = image_brightness[image_brightness_sort_idx]
 
-    # median_image_idx = int(np.argwhere(image_brightness == np.percentile(image_brightness, 50, interpolation='nearest')))
-    print(f"Median exposure image is {median_image_idx} with filename {files[median_image_idx]}")
+    # Identify exposure compensation to apply to each image
+    default_exposure_comp = np.array([-1.0 * i for i in range(n)]) + median_image_idx
+    for exp, fn, b in zip(default_exposure_comp, files, image_brightness):
+        print(f"{fn} - average brightness: {b} - initial exposure comp: {exp:0.2f}")
 
     # Run GD
-    default_exposure_comp = [-1.0 * i for i in range(n)] + median_image_idx
-    print("default exposure comp: ", default_exposure_comp)
     gains, model = models.derive_exp_function_gd(
         images=all_images,
         ref_image_num=median_image_idx,
