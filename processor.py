@@ -85,7 +85,8 @@ def fit_bracketed_exposures(args):
     found_parameters = model.get_log_parameters()
     print(found_parameters)
     print(found_parameters.exp_curve_to_str())
-
+    with open(os.path.join(dir_path, "parameters.csv"), "w") as f:
+        f.write(found_parameters.to_csv())
 
     # Try a visual comparison of two images.
     input_images = all_images.reshape(n,h,w,c)

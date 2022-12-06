@@ -36,7 +36,7 @@ const float cut = {self.cut};
 
 const float y_cut = slope * cut + intercept;
 if (y < y_cut) {{
-    return = (y - intercept) / slope;
+    return (y - intercept) / slope;
 }} else {{
     return _log10f((y - offset) / scale) / _log10f(base);
 }}
@@ -57,6 +57,17 @@ if (x < cut) {{
 }} else {{
     return _powf(base, x) * scale + offset;
 }}
+"""
+        return output
+
+    def to_csv(self):
+        output = f"""name,value
+base,{self.base}
+offset,{self.offset}
+scale,{self.scale}
+slope,{self.slope}
+intercept,{self.intercept}
+cut,{self.cut}
 """
         return output
 
