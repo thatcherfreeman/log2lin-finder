@@ -26,7 +26,7 @@ def fit_bracketed_exposures(args):
     # Read in the folder of tiff files.
     dir_path = args.dir_path
     files = [x for x in sorted(os.listdir(dir_path))]
-    files = [x for x in files if x.lower().endswith('tif') or x.lower().endswith('tiff')]
+    files = [x for x in files if x.lower().endswith('tif') or x.lower().endswith('tiff') or x.lower().endswith('exr')]
     all_images = []
     print(f"Reading files at directory {dir_path}")
     for fn in files:
@@ -59,11 +59,18 @@ def fit_bracketed_exposures(args):
     all_images = all_images.reshape(n, h*w, c)
 
     # identify median brightness image.
-    image_brightness = np.mean(flattened_images, axis=1)
-    median_image_idx = int(np.argwhere(image_brightness == np.percentile(image_brightness, 50, interpolation='nearest')))
+    image_brightness = np.mean(all_images.reshape(n, h*w*c), axis=1)
+    image_brightness_sort_idx = np.argsort(image_brightness)
+    median_image_idx = image_brightness_sort_idx[int(0.5 * len(image_brightness_sort_idx))]
+    all_images = all_images[image_brightness_sort_idx]
+    files = np.array(files)[image_brightness_sort_idx]
+
+    # median_image_idx = int(np.argwhere(image_brightness == np.percentile(image_brightness, 50, interpolation='nearest')))
     print(f"Median exposure image is {median_image_idx} with filename {files[median_image_idx]}")
 
     # Run GD
+    default_exposure_comp = [-1.0 * i for i in range(n)] + median_image_idx
+    print("default exposure comp: ", default_exposure_comp)
     gains, model = models.derive_exp_function_gd(
         images=all_images,
         ref_image_num=median_image_idx,
@@ -71,7 +78,7 @@ def fit_bracketed_exposures(args):
         epochs=args.num_epochs,
         lr=args.learning_rate,
         use_scheduler=not args.no_lrscheduler,
-        exposures=torch.tensor([-4., -3., -2., -1., 0., 1., 2., 3.,]).unsqueeze(1),
+        exposures=torch.tensor(default_exposure_comp, dtype=float).unsqueeze(1),
     )
 
     print(gains.get_gains())

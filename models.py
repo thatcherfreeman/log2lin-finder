@@ -34,7 +34,7 @@ const float intercept = {self.intercept};
 const float cut = {self.cut};
 
 
-const float y_cut = slope * cut + intercept
+const float y_cut = slope * cut + intercept;
 if (y < y_cut) {{
     return = (y - intercept) / slope;
 }} else {{
@@ -52,7 +52,7 @@ const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
 
-if (t < cut) {{
+if (x < cut) {{
     return slope * x + intercept;
 }} else {{
     return _powf(base, x) * scale + offset;
