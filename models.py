@@ -150,17 +150,18 @@ class exp_function_simplified(nn.Module):
         pow_value = scale * torch.pow(base, t) + offset
         lin_value = slope * t + intercept
         output = interp * pow_value + (1 - interp) * lin_value
-        output = torch.clamp(output, min=1e-6)
+        # output = torch.clamp(output, min=1e-6)
         return output
 
     def reverse(self, y):
         base, offset, scale, slope, intercept, cut = self.compute_intermediate_values()
         y_cut = slope * cut + intercept
         interp = (y > y_cut).float()
-        log_value = torch.log(torch.clamp((y - offset) / scale, min=1e-6)) / torch.log(base)
+        log_value = torch.log(torch.clamp((y - offset) / scale, min=1e-7)) / torch.log(base)
         lin_value = (y - intercept) / slope
         output = interp * log_value + (1 - interp) * lin_value
-        output = torch.clamp(output, 1e-6, 1.0)
+        # output = torch.clamp(output, 1e-6, 1.0)
+        output = torch.clamp(output, 0.0, 1.0)
         return output
 
     def get_log_parameters(self) -> exp_parameters_simplified:
@@ -230,6 +231,12 @@ def reconstruction_error(y, y_original, target_idx, sample_mask):
     # delta = (y - y_target)**2
     return torch.mean(delta[sample_mask])
 
+def negative_linear_values_penalty(y_linear, sample_mask):
+    sample_mask = sample_mask & ~torch.isnan(y_linear)
+    negative = torch.minimum(y_linear, torch.zeros_like(y_linear)) # zero out positive values.
+    loss = torch.abs(negative)
+    return torch.mean(loss[sample_mask])
+
 def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True) -> nn.Module:
     # torch.autograd.set_detect_anomaly(True)
     model = exp_function_simplified(INITIAL_GUESS)
@@ -287,7 +294,7 @@ def derive_exp_function_gd(
     dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
 
     optim = torch.optim.Adam(list(model.parameters()) + list(gains.parameters()), lr=lr)
-    sched = torch.optim.lr_scheduler.MultiplicativeLR(optim, lambda x: (0.5 if x % 3000 == 0 else 1.0))
+    sched = torch.optim.lr_scheduler.MultiplicativeLR(optim, lambda x: (0.5 if x % 20 == 0 else 1.0))
     errors = []
     losses = []
     model.train()
@@ -306,10 +313,9 @@ def derive_exp_function_gd(
 
 
                 # Ideally all of y_pred would be equal
-                # loss = percent_error_masked(y_pred, sample_mask)
-                # loss = percent_error_target(y_pred, ref_image_num, sample_mask)
                 loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
-                loss += (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2
+                loss += negative_linear_values_penalty(y_pred, sample_mask)
+                loss += (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2 # global exposure adjustment
                 loss.backward()
                 optim.step()
 

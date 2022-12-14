@@ -78,7 +78,7 @@ def fit_bracketed_exposures(args):
         white_point=white_point*0.95,
         epochs=args.num_epochs,
         lr=args.learning_rate,
-        use_scheduler=not args.no_lrscheduler,
+        use_scheduler=args.lrscheduler,
         exposures=torch.tensor(default_exposure_comp, dtype=float).unsqueeze(1),
     )
 
@@ -154,7 +154,7 @@ def fit_lut_file(args):
         lut,
         epochs=epochs,
         lr=args.learning_rate,
-        use_scheduler=(not args.no_lrscheduler),
+        use_scheduler=args.lrscheduler,
     )
     print(model.get_log_parameters())
 
@@ -240,8 +240,8 @@ if __name__ == "__main__":
         required=False,
     )
     parser.add_argument(
-        '--no_lrscheduler',
-        action='store_false',
+        '--lrscheduler',
+        action='store_true',
         help='Add flag to avoid learning rate scheduler. Do this if the step size goes to zero before convergeance.',
         required=False,
     )
