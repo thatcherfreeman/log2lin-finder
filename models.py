@@ -241,7 +241,7 @@ def negative_linear_values_penalty(y_linear):
 def middle_gray_penalty(lin_img):
     # Given "properly exposed" linear image, penalize if it doesn't average at middle gray
     pos_mask = lin_img > 0.0
-    return torch.mean(torch.log2(lin_img)[pos_mask] - torch.log2(torch.tensor(0.18)))**2
+    return (torch.mean(torch.log2(lin_img)[pos_mask]) - torch.log2(torch.tensor(0.18)))**2
 
 def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True) -> nn.Module:
     # torch.autograd.set_detect_anomaly(True)
@@ -325,8 +325,8 @@ def derive_exp_function_gd(
                 # Ideally all of y_pred would be equal
                 loss = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (pixels.unsqueeze(1) < white_point))
                 loss += negative_linear_values_penalty(y_pred)
-                # loss += middle_gray_penalty(y_pred[:, ref_image_num, 0, :]) # global exposure adjustment
-                loss += (torch.mean(y_pred[:, ref_image_num, ref_image_num, :]) - 0.18)**2
+                loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
+                # loss += (torch.mean(y_pred[:, ref_image_num, ref_image_num, :]) - 0.18)**2
 
                 loss.backward()
                 optim.step()

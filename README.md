@@ -20,7 +20,13 @@ Alternatively, if you have a directory of images (the script looks for 16-bit ti
 python processor.py --dir_path <directory path of images>
 ```
 
-It's worth noting that a set of 1080p images would have 2M pixels each, whereas a 12-bit 1D LUT would have on the order of 4096 points. As a result, the number of epochs you should use would be heavily dependent on the dataset size. When using 8 images, I train for about 20 epochs, whereas with the 1D LUT, you can train for 50k epochs.
+It's worth noting that a set of 1080p images would have 2M pixels each, whereas a 12-bit 1D LUT would have on the order of 4096 points. As a result, the number of epochs you should use would be heavily dependent on the dataset size. When using 8 images, I train for about 100 epochs, whereas with the 1D LUT, you can train for 50k epochs.
+
+I got good results with Canon C-Log3 Images with the following parameters:
+```
+python .\processor.py --dir_path "<path to images>" --num_epochs 100 --fixed_exposures --blur_amt 7
+```
+This took about 3 hours on my computer.
 
 ## Tips for taking images
 1. Lock your camera off on a tripod, pointing at a scene with a variety of tones in it (IE not just a white wall or a test chart, shoot your bookshelf if you can't think of anything).
@@ -29,7 +35,7 @@ It's worth noting that a set of 1080p images would have 2M pixels each, whereas 
 4. Without moving your camera, shorten the shutter speed in one-stop increments until you can't shorten it anymore. Hopefully you have around 8 to 12 images.
 5. Make 16-bit tiffs or EXRs of each exposure and throw them in a folder somewhere, I'd recommend resizing them to 1080p.
 6. Run the script with `python processor.py --dir_path <directory of images>`, this should take around a minute.
-7. If the script is working, run it again with `--num_epochs 20` or so to get a more accurate result.
+7. If the script is working, run it again with `--num_epochs X` with `X` in the range of 20-100 to get a more accurate result.
 
 ## Verifying your results
 As a sanity check, the script will generate a rendering of your images in their log state, with an exposure adjustment being applied in Linear. If the log curve parameters are correct, then all images should look the same (excluding noise and clipped pixels). You can copy the log curve parameters into the Log Curve DCTL and see if you can match your images in Resolve by applying Gain after converting the images to Linear.
