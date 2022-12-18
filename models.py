@@ -222,22 +222,18 @@ def error_fn_2(y, target_idx, sample_mask):
     delta = torch.abs(y - y_target)
     return torch.mean(delta[sample_mask])
 
-def reconstruction_error(y, y_original, target_idx, sample_mask):
-    # Assume y of shape (batch_size, n_images, 3)
-    # assume y_original of same shape
+def reconstruction_error(y, y_original, sample_mask):
+    # Assume y of shape (batch_size, n_images, n_images, 3)
+    # assume y_original of shape (batch_size, 1, n_images, 3)
     # assume target_idx points to the one with gain 1.0
-    # Assume y and y_original are both the log encoded images, just take MSE.
-    answer_mask = torch.ones_like(y, dtype=bool)
-    answer_mask[:, [target_idx], :] = 0
-    sample_mask = sample_mask & answer_mask & ~torch.isnan(y)
-
-    y_target = y_original[:, [target_idx], :] # (batch_size, 1, 3), just the target image
-    delta = torch.abs(y - y_target)
+    # Assume y and y_original are both the log encoded images, just take L2 or L1 error.
+    sample_mask = sample_mask & ~torch.isnan(y)
+    delta = torch.abs(y - y_original)
     # delta = (y - y_target)**2
     return torch.mean(delta[sample_mask])
 
-def negative_linear_values_penalty(y_linear, sample_mask):
-    sample_mask = sample_mask & ~torch.isnan(y_linear)
+def negative_linear_values_penalty(y_linear):
+    sample_mask = ~torch.isnan(y_linear)
     negative = torch.minimum(y_linear, torch.zeros_like(y_linear)) # zero out positive values.
     loss = torch.abs(negative)
     return torch.mean(loss[sample_mask])
@@ -318,27 +314,26 @@ def derive_exp_function_gd(
                 batch_size = pixels.shape[0]
 
                 optim.zero_grad()
-                pixels = pixels # shape (batch_size, n_images, 1, n_channels)
                 lin_images = model(pixels)
                 # All lin images matched to image `ref_image_num` is lin_images_matrix[:, :, ref_image_num, :]
+                # lin_images_matrix[:, a, b, :] represents the transformation of image (a) when converted to the exposure of (b).
                 lin_images_matrix = torch.stack([lin_images * gains(torch.arange(0, n_images), neutral_idx) for neutral_idx in torch.arange(0, n_images)], axis=2) # shape (batch_size, n_images, n_images, n_channels)
-                sample_mask = pixels < white_point
-                y_pred = lin_images_matrix[:, :, ref_image_num, :]
+                # lin_images_matrix = torch.stack([lin_images * gains(torch.arange(0, n_images), neutral_idx) for neutral_idx in [0, ref_image_num, n_images-1]], axis=2) # shape (batch_size, n_images, n_images, n_channels)
+                y_pred = lin_images_matrix
                 reconstructed_image = model.reverse(y_pred)
 
-                # Make y_pred_mat of shape (batch_size, n_images, n_images, n_channels), where we want them to match
-                # pixels of shape (batch_size, n_images, 1, n_channels)
-
                 # Ideally all of y_pred would be equal
-                loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
-                loss += negative_linear_values_penalty(y_pred, sample_mask)
-                loss += middle_gray_penalty(y_pred[:, ref_image_num, :]) # global exposure adjustment
+                loss = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (pixels.unsqueeze(1) < white_point))
+                loss += negative_linear_values_penalty(y_pred)
+                # loss += middle_gray_penalty(y_pred[:, ref_image_num, 0, :]) # global exposure adjustment
+                loss += (torch.mean(y_pred[:, ref_image_num, ref_image_num, :]) - 0.18)**2
+
                 loss.backward()
                 optim.step()
 
                 # error = err_fn(y_pred, sample_mask).detach()
                 # error = error_fn_2(y_pred, ref_image_num, sample_mask).detach()
-                error = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
+                error = reconstruction_error(reconstructed_image[:, :, ref_image_num, :], pixels[:, [ref_image_num], :], sample_mask=(reconstructed_image[:, :, ref_image_num, :] < white_point) & (pixels[:, [ref_image_num], :] < white_point))
 
                 bar.update(batch_size)
                 bar.set_postfix(loss=float(loss), error=float(error), params=model.get_log_parameters(), lr=sched.get_last_lr())
