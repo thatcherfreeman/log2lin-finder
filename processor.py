@@ -80,6 +80,7 @@ def fit_bracketed_exposures(args):
         lr=args.learning_rate,
         use_scheduler=args.lrscheduler,
         exposures=torch.tensor(default_exposure_comp, dtype=float).unsqueeze(1),
+        fixed_exposures=args.fixed_exposures,
     )
 
     print(gains.get_gains())
@@ -243,6 +244,12 @@ if __name__ == "__main__":
         '--lrscheduler',
         action='store_true',
         help='Add flag to avoid learning rate scheduler. Do this if the step size goes to zero before convergeance.',
+        required=False,
+    )
+    parser.add_argument(
+        '--fixed_exposures',
+        action='store_true',
+        help='Add this flag to avoid fine-tuning the one-stop increments between the estimated exposure differences.',
         required=False,
     )
     parser.add_argument(

@@ -102,7 +102,7 @@ class pixel_dataset(data.Dataset):
 
 
 class gain_table(nn.Module):
-    def __init__(self, num_images: int, frozen_image_idx: int, exposures=None):
+    def __init__(self, num_images: int, frozen_image_idx: int, exposures=None, fixed_exposures=False):
         super(gain_table, self).__init__()
         # Store one gain value per image.
         self.table = nn.Embedding(num_images, 1)
@@ -111,7 +111,7 @@ class gain_table(nn.Module):
         self.table.weight.data.fill_(0.0)
         if exposures is not None:
             self.table.weight.data = exposures
-            # self.table.requires_grad_(False)
+            self.table.requires_grad_(not fixed_exposures)
 
     def forward(self, x):
         # check that x is not equal to the frozen one, look up the others in the table.
@@ -285,11 +285,12 @@ def derive_exp_function_gd(
     lr=1e-3,
     use_scheduler=True,
     exposures=None,
+    fixed_exposures=False,
 ) -> Tuple[nn.Module, nn.Module]:
 
     # torch.autograd.set_detect_anomaly(True)
     model = exp_function_simplified(INITIAL_GUESS)
-    gains = gain_table(images.shape[0], ref_image_num, exposures)
+    gains = gain_table(images.shape[0], ref_image_num, exposures, fixed_exposures)
     ds = pixel_dataset(images)
     dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
 
