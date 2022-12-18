@@ -5,3 +5,7 @@ __pycache__*
 *.DS_Store*
 *.drx
 canon_imgs
+*.aux
+*.out
+*.synctex.gz
+*.log
