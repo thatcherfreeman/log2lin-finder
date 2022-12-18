@@ -1,0 +1,156 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Journal Article
+% LaTeX Template
+% Version 1.4 (15/5/16)
+%
+% This template has been downloaded from:
+% http://www.LaTeXTemplates.com
+%
+% Original author:
+% Frits Wenneker (http://www.howtotex.com) with extensive modifications by
+% Vel (vel@LaTeXTemplates.com)
+%
+% License:
+% CC BY-NC-SA 3.0 (http://creativecommons.org/licenses/by-nc-sa/3.0/)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%----------------------------------------------------------------------------------------
+%	PACKAGES AND OTHER DOCUMENT CONFIGURATIONS
+%----------------------------------------------------------------------------------------
+
+\documentclass[twoside]{article}
+
+\usepackage{blindtext} % Package to generate dummy text throughout this template
+
+\usepackage[sc]{mathpazo} % Use the Palatino font
+\usepackage[T1]{fontenc} % Use 8-bit encoding that has 256 glyphs
+\linespread{1.05} % Line spacing - Palatino needs more space between lines
+\usepackage{microtype} % Slightly tweak font spacing for aesthetics
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{mathtools}
+\usepackage[english]{babel} % Language hyphenation and typographical rules
+
+\usepackage[hmarginratio=1:1,top=32mm,columnsep=20pt]{geometry} % Document margins
+\usepackage[hang, small,labelfont=bf,up,textfont=it,up]{caption} % Custom captions under/above floats in tables or figures
+\usepackage{booktabs} % Horizontal rules in tables
+
+\usepackage{lettrine} % The lettrine is the first enlarged letter at the beginning of the text
+
+\usepackage{enumitem} % Customized lists
+\setlist[itemize]{noitemsep} % Make itemize lists more compact
+
+\usepackage{abstract} % Allows abstract customization
+\renewcommand{\abstractnamefont}{\normalfont\bfseries} % Set the "Abstract" text to bold
+\renewcommand{\abstracttextfont}{\normalfont\small\itshape} % Set the abstract itself to small italic text
+
+\usepackage{titlesec} % Allows customization of titles
+\renewcommand\thesection{\Roman{section}} % Roman numerals for the sections
+\renewcommand\thesubsection{\roman{subsection}} % roman numerals for subsections
+\titleformat{\section}[block]{\large\scshape\centering}{\thesection.}{1em}{} % Change the look of the section titles
+\titleformat{\subsection}[block]{\large}{\thesubsection.}{1em}{} % Change the look of the section titles
+
+\usepackage{fancyhdr} % Headers and footers
+\pagestyle{fancy} % All pages have headers and footers
+\fancyhead{} % Blank out the default header
+\fancyfoot{} % Blank out the default footer
+% \fancyhead[C]{Running title $\bullet$ May 2016 $\bullet$ Vol. XXI, No. 1} % Custom header text
+\fancyfoot[C]{\thepage} % Custom footer text
+
+\usepackage{titling} % Customizing the title section
+
+\usepackage{hyperref} % For hyperlinks in the PDF
+
+%----------------------------------------------------------------------------------------
+%	TITLE SECTION
+%----------------------------------------------------------------------------------------
+
+\setlength{\droptitle}{-4\baselineskip} % Move the title up
+
+\pretitle{\begin{center}\Huge\bfseries} % Article title formatting
+\posttitle{\end{center}} % Article title closing formatting
+\title{Guidelines for Camera Profiling} % Article title
+\author{%
+    \textsc{Thatcher Freeman} \\[1ex] % Your name
+    \normalsize \href{https://github.com/thatcherfreeman}{github.com/thatcherfreeman}
+}
+\date{}%\today} % Leave empty to omit a date
+\renewcommand{\maketitlehookd}{%
+    \begin{abstract}
+    \noindent Camera color spaces are characterized by an OETF, a function mapping light values to code values, and by a color gamut, specified by the CIE x,y chromaticity of the red, green, blue, and white point. These can be estimated with a set of images constructed in the right conditions and this document will illustrate how to best capture these images.
+    \end{abstract}
+}
+
+%----------------------------------------------------------------------------------------
+
+\begin{document}
+
+% Print the title
+\maketitle
+
+%----------------------------------------------------------------------------------------
+%	ARTICLE CONTENTS
+%----------------------------------------------------------------------------------------
+
+\section{Prerequisites}
+\subsection*{ISO Selection}
+\subsection*{Lens Selection}
+
+\section{Images for OETF Profiling}
+The first step in profiling a camera is to be capable of linearizing the image. This requires inverting the camera OETF and therefore obtaining the ability of mapping from the file code values to a quantity of photons that the camera saw. Once we have transformed an image to scene-linear, we obtain the ability to convert to other color spaces, to exposure match images shot with different exposure settings, and to apply gamut transformations. Thus, this is a prerequisite to Gamut Profiling. \\
+
+We take advantage of the fact that images with different exposures can be matched in linear by shooting images that cover the entire range of code values, and then finding a linearization function that will best allow the images to be matched via a simple scalar multiplication adjustment (multiplication by $2^x$ where $x$ is the number of stops to increse the image's exposure by). \\
+
+This section will describe the procedure for shooting the exposure bracket needed to profile the OETF.
+
+\subsection*{Exposure Bracketing Scene Requirements}
+The scene requirements are relatively flexible. It is preferable to have a scene with a variety of tones, rather than one that is only a few shades of gray. As a result, I do not recommend simply shooting a test chart, rather it would be preferable to a subject that has gradients and doesn't have large blocks of black.
+
+\subsubsection*{Requirements}
+\begin{enumerate}
+    \item \textbf{A stationary subject} - The captured images will need to be aligned in 2D space, so the scene cannot move over the course of capture.
+    \item \textbf{Controlled lighting} - Lighting should be done artificially so that the moving sun, cloud coverage, or other variations in light quantity and direction are not a factor. The light should remain unchanged in position and intensity for the entire exposure ramp.
+    \item \textbf{Adequate quantity of light} - There should be enough light that there are some clipped pixels in the brightest exposure. The brightest exposure should be such that there aren't gaps between the clipping point and the tonal mass.
+\end{enumerate}
+
+\subsubsection*{Non-Requirements}
+\begin{enumerate}
+    \item \textbf{Color Charts} - For OETF profiling, we do not need the image to have any sort of test chart in it.
+    \item \textbf{High quality lighting} - The quality of the light is immaterial for this part of the process, so feel free to choose a light based on the quantity of output rather than by how it matches some standard illuminant.
+\end{enumerate}
+
+\subsection*{Exposure Bracketing Camera Settings}
+As the exposure bracketed images need to contain the same content, we will be controlling exposure solely with shutter speed.
+
+\subsubsection*{Procedure}
+The first image will be taken with a slow shutter speed (on video cameras, this would be a 360 degree shutter, and therefore either 1/24 or 1/25 seconds). A clip will be shot at this shutter speed, and then the shutter speed will be increased by one stop, another clip will be shot, and so on. This will be repeated until no faster shutter speed is allowed by the camera, usually resulting in around 8 to 12 exposures.
+
+\subsubsection*{Requirements}
+\begin{enumerate}
+    \item \textbf{Clipping in first exposure} - The brightest exposure has some clipped pixels in it, so we can make sure we've covered the top of the tonal range.
+    \item \textbf{ND filters are NOT used} - Neutral Density filters should not be added to aid in decreasing the exposure
+    \item \textbf{The camera is stationary} - The camera should be locked off on a tripod so all exposures in the bracket are aligned.
+    \item \textbf{The camera's other settings are fixed} - White balance, ISO, aperture, and focus distance should all be fixed so the images will be directly comparable.
+    \item \textbf{Image stabilization is turned off} - This is to reduce the risk that the images become misaligned due to randomness in the sensor or lens element positions.
+\end{enumerate}
+
+\subsubsection*{Non-Requirements}
+\begin{enumerate}
+    \item \textbf{White Balance} - This test does not require a specific ``correct'' white balance setting, but it does require that the camera's white balance does not change between exposures. It may be easiest to just set this to Daylight or to set a custom white balance for your specific scene.
+\end{enumerate}
+
+\section{Images for Gamut Profiling}
+
+\subsubsection*{Requirements}
+\begin{enumerate}
+    \item \textbf{Controlled flaring}
+    \item \textbf{Controlled Glare} - The light should be placed at such an angle that the camera is not in-line with the primary reflection of the light in the color chart. If the camera is normal to the test chart, putting the light at a 45 degree angle to the test chart would easily avoid this.
+    \item \textbf{High quality light}
+    \item \textbf{Even lighting on the color chart} - Place the light farther from the test chart so that there aren't light fall-off problems (at least 4x the length of the long side of the test chart away).
+    \item \textbf{Color chart fills the middle third of the image} - This is a compromise between maximizing the number of pixels we can sample for each color chip, and avoiding lens vignetting.
+\end{enumerate}
+
+%----------------------------------------------------------------------------------------
+
+\end{document}

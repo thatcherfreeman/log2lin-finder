@@ -102,25 +102,30 @@ class pixel_dataset(data.Dataset):
 
 
 class gain_table(nn.Module):
-    def __init__(self, num_images: int, frozen_image_idx: int, exposures=None, fixed_exposures=False):
+    def __init__(self, num_images: int, exposures=None, fixed_exposures=False):
         super(gain_table, self).__init__()
         # Store one gain value per image.
         self.table = nn.Embedding(num_images, 1)
-        self.frozen_idx = frozen_image_idx
         # let the table learn the different exposures of the images from a neutral starting point
         self.table.weight.data.fill_(0.0)
+        self.num_images = num_images
         if exposures is not None:
             self.table.weight.data = exposures
             self.table.requires_grad_(not fixed_exposures)
 
-    def forward(self, x):
+    def forward(self, x, neutral_idx):
         # check that x is not equal to the frozen one, look up the others in the table.
-        table_result = self.table(x) # (n, 1)
-        table_result[x == self.frozen_idx] *= 0.0
+        if type(neutral_idx) != torch.Tensor:
+            neutral_idx = torch.tensor(neutral_idx)
+        neutral_gain = self.table(neutral_idx)
+        table_result = self.table(x) - neutral_gain # (n, 1)
         return torch.pow(2.0, table_result)
 
-    def get_gains(self):
-        return self.table.weight.detach().numpy()
+    def forward_matrix(self):
+        return torch.cat([self.forward(torch.arange(0, self.num_images), neutral) for neutral in torch.arange(0, self.num_images)], axis=1)
+
+    def get_gains(self, neutral_idx):
+        return torch.log2(self.forward(torch.arange(0, self.num_images), neutral_idx)).detach().numpy()
 
 
 class exp_function_simplified(nn.Module):
@@ -237,6 +242,11 @@ def negative_linear_values_penalty(y_linear, sample_mask):
     loss = torch.abs(negative)
     return torch.mean(loss[sample_mask])
 
+def middle_gray_penalty(lin_img):
+    # Given "properly exposed" linear image, penalize if it doesn't average at middle gray
+    pos_mask = lin_img > 0.0
+    return torch.mean(torch.log2(lin_img)[pos_mask] - torch.log2(torch.tensor(0.18)))**2
+
 def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True) -> nn.Module:
     # torch.autograd.set_detect_anomaly(True)
     model = exp_function_simplified(INITIAL_GUESS)
@@ -287,10 +297,11 @@ def derive_exp_function_gd(
     exposures=None,
     fixed_exposures=False,
 ) -> Tuple[nn.Module, nn.Module]:
+    n_images = images.shape[0]
 
     # torch.autograd.set_detect_anomaly(True)
     model = exp_function_simplified(INITIAL_GUESS)
-    gains = gain_table(images.shape[0], ref_image_num, exposures, fixed_exposures)
+    gains = gain_table(n_images, exposures, fixed_exposures)
     ds = pixel_dataset(images)
     dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
 
@@ -307,16 +318,21 @@ def derive_exp_function_gd(
                 batch_size = pixels.shape[0]
 
                 optim.zero_grad()
-                img_gains = gains(torch.arange(0, pixels.shape[1])).unsqueeze(0) # (1, n_images, 1)
+                pixels = pixels # shape (batch_size, n_images, 1, n_channels)
+                lin_images = model(pixels)
+                # All lin images matched to image `ref_image_num` is lin_images_matrix[:, :, ref_image_num, :]
+                lin_images_matrix = torch.stack([lin_images * gains(torch.arange(0, n_images), neutral_idx) for neutral_idx in torch.arange(0, n_images)], axis=2) # shape (batch_size, n_images, n_images, n_channels)
                 sample_mask = pixels < white_point
-                y_pred = model(pixels) * img_gains
+                y_pred = lin_images_matrix[:, :, ref_image_num, :]
                 reconstructed_image = model.reverse(y_pred)
 
+                # Make y_pred_mat of shape (batch_size, n_images, n_images, n_channels), where we want them to match
+                # pixels of shape (batch_size, n_images, 1, n_channels)
 
                 # Ideally all of y_pred would be equal
                 loss = reconstruction_error(reconstructed_image, pixels, ref_image_num, sample_mask)
                 loss += negative_linear_values_penalty(y_pred, sample_mask)
-                loss += (torch.mean(y_pred[:, ref_image_num, :]) - 0.18)**2 # global exposure adjustment
+                loss += middle_gray_penalty(y_pred[:, ref_image_num, :]) # global exposure adjustment
                 loss.backward()
                 optim.step()
 

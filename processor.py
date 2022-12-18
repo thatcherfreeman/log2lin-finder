@@ -83,7 +83,7 @@ def fit_bracketed_exposures(args):
         fixed_exposures=args.fixed_exposures,
     )
 
-    print(gains.get_gains())
+    print(gains.get_gains(median_image_idx))
     found_parameters = model.get_log_parameters()
     print(found_parameters)
     print(found_parameters.exp_curve_to_str())
@@ -100,7 +100,7 @@ def fit_bracketed_exposures(args):
     titles = []
     with torch.no_grad():
         for i, (image, fn) in enumerate(zip(input_images, files)):
-            gain = gains(torch.tensor(i))
+            gain = gains(torch.tensor(i), median_image_idx)
             lin_image = model(torch.tensor(image)) * gain
             log_image = model.reverse(lin_image)
             # gamma_image = (32*lin_image)**0.45

@@ -1,3 +1,4 @@
+*.csv
 video files*
 __pycache__*
 .vscode*
