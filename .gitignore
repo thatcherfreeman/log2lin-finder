@@ -9,3 +9,4 @@ canon_imgs
 *.out
 *.synctex.gz
 *.log
+*.toc
