@@ -122,9 +122,9 @@ This whole process will require you to take the following images, ideally in the
 \end{enumerate}
 
 \newpage
-\includegraphics[scale=0.35]{OETF Images.jpg}
+\includegraphics[scale=0.35]{images/OETF Images.jpg}
 
-\includegraphics[scale=0.35]{Gamut Images.jpg}
+\includegraphics[scale=0.35]{images/Gamut Images.jpg}
 
 
 \newpage\section{Images for OETF Profiling}
@@ -135,7 +135,13 @@ The first step in profiling a camera is to be capable of linearizing the image. 
 \subsubsection{Procedure}
 The first group of images needed are an exposure bracket. The camera will be fixed in position on a tripod, pointed at a stationary scene with fixed lighting so that all images align. The camera will be set with a slow shutter speed (360 degree shutter angle) and exposed for a second. Then, the shutter angle will be stopped down one stop at a time and new shots will be taken until the camera does not allow any further reduction in exposure. There should be no change to ISO, Aperture, White Balance, Lens, Focus Distance, or quantity of light across the exposure bracket. \\
 
-The choice of scene is relatively flexible and should be achievable by shooting a bookshelf or a living room under controlled lighting. Stick to the following requirements.
+The choice of scene is relatively flexible and should be achievable by shooting a bookshelf or a living room under controlled lighting. \\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=0.1]{images/exposure_bracket_setup0000.jpg}
+\end{figure}
+
 
 \subsubsection{Scene Requirements}
 \begin{enumerate}
@@ -223,6 +229,11 @@ In an ideal world, the camera's gamut would be profiled by generating single wav
 \subsubsection{Procedure}
 Here we simply require a properly exposed shot of a Macbeth Chart/ColorChecker directly illuminated by a common 40-60W Incadescent lightbulb. The camera should be white balanced for this illuminant using the method you would most commonly use -- either Tungsten, Custom White Balance, or setting the white balance to 2856K.
 
+\begin{figure}[ht]
+    \centering
+    \includegraphics[scale=0.08]{images/tungsten_color_chart_setup0000.jpg}
+\end{figure}
+
 \subsubsection{Requirements}
 \begin{enumerate}
     \item \textbf{Dark Background to control flaring} - We don't want there to be any lights or glares in the background of the image that would result in lens flaring.
@@ -250,6 +261,12 @@ As this is merely to correct for any vignetting or lighting inconsistency in the
 
 \subsubsection{Procedure}
 As with the Color Chart with Std. Illuminant A, we need to capture a shot of the color chart in direct sunlight. To avoid glare, the camera angle must be selected so that the main reflection from the sun is not in-line with the lens, and a dark background should be used behind the color chart.
+
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[scale=0.08]{images/sunlight_color_chart_setup0000.jpg}
+\end{figure}
 
 \subsubsection{Requirements}
 \begin{enumerate}
