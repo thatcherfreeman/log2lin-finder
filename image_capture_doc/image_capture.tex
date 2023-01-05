@@ -126,7 +126,7 @@ This whole process will require you to take the following images, ideally in the
 
 \includegraphics[scale=0.35]{images/Gamut Images.jpg}
 
-
+\newpage
 \newpage\section{Images for OETF Profiling}
 The first step in profiling a camera is to be capable of linearizing the image. This requires inverting the camera OETF and therefore obtaining the ability to map from the image code values to a quantity of photons that the camera saw. Once we have transformed an image to scene-linear, we obtain the ability to convert to other color spaces, to exposure match images shot with different exposure settings, and to apply gamut transformations. Thus, this is a prerequisite to Gamut Profiling. \\
 
@@ -221,6 +221,7 @@ For a given ISO, aperture (T-stops), and shutter speed, light a gray card so tha
     \item \textbf{Light positioned to minimize glare} - The light should be placed so that it is not primarily reflecting off the gray card into the camera lens. IE if the gray card were replaced by a mirror, the camera should not see the light in the reflection. This can be easily achieved by putting the camera normal to the gray card, and the light at a 45 degree angle with the gray card's normal vector.
 \end{enumerate}
 
+\newpage
 \section{Images for Gamut Profiling}
 In an ideal world, the camera's gamut would be profiled by generating single wavelengths and measuring the camera's response to each wavelength of light. Without access to such a device, the next-best approach is to shoot standardized color charts that have known CIELAB colors or spectral reflectance values under standardized lighting. Here, we will shoot a color chart and a neutrally colored card under Standard Illuminants A and D55 - an incadescent light bulb and direct sunlight.
 
@@ -243,6 +244,7 @@ Here we simply require a properly exposed shot of a Macbeth Chart/ColorChecker d
     \item \textbf{Even lighting on the color chart} - Place the light farther from the test chart so that there aren't light fall-off problems (at least 4x the length of the long side of the test chart away).
     \item \textbf{Color chart fills the middle third of the image} - This is a compromise between maximizing the number of pixels we can sample for each color chip, and avoiding lens vignetting.
     \item \textbf{No light modifiers} - The bulb should not be covered by a lampshade or a softbox that may discolor the image, and likewise it should not be bounced off of colored walls.
+    \item \textbf{Lens stopped down a couple stops} - By stopping down the lens, contrast and flare are typically improved. Pick an aperture in the range of f/4-f/8, if possible.
 \end{enumerate}
 
 \subsection{White or Gray card under Standard Illuminant A}
@@ -257,6 +259,7 @@ As this is merely to correct for any vignetting or lighting inconsistency in the
 \end{enumerate}
 
 
+\newpage
 \subsection{ColorChecker under Daylight}
 
 \subsubsection{Procedure}
@@ -276,6 +279,7 @@ As with the Color Chart with Std. Illuminant A, we need to capture a shot of the
     \item \textbf{Camera not in primary reflection of the sun} - Reduce glare by making sure the primary reflection of the sun in the color chart is not in the direction of the camera. This can be done by making sure the sun is front-lighting the color chart.
     \item \textbf{Time is afternoon or morning} - We ideally want to capture the color of the sun when it is neither sunset/sunrise/mid-day.
     \item \textbf{White Balance for daylight} - Set the camera's white balance to 5500K or Daylight, or a custom white balance for this sunlight.
+    \item \textbf{Lens stopped down a couple stops} - By stopping down the lens, contrast and flare are typically improved. Pick an aperture in the range of f/4-f/8, if possible.
 \end{enumerate}
 
 \subsection{White or Gray card under Daylight}
