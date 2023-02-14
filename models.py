@@ -238,6 +238,10 @@ def negative_linear_values_penalty(y_linear):
     loss = torch.abs(negative)
     return torch.mean(loss[sample_mask])
 
+def negative_black_point_penalty(black_lin):
+    loss = torch.abs(torch.minimum(black_lin, torch.zeros_like(black_lin))) # zero if black_lin > 0
+    return loss
+
 def middle_gray_penalty(lin_img):
     # Given "properly exposed" linear image, penalize if it doesn't average at middle gray
     pos_mask = lin_img > 0.0
@@ -287,6 +291,7 @@ def derive_exp_function_gd(
     images: np.ndarray,
     ref_image_num: int,
     white_point: float,
+    black_point: float,
     epochs: int = 20,
     lr=1e-3,
     use_scheduler=True,
@@ -315,10 +320,11 @@ def derive_exp_function_gd(
 
                 optim.zero_grad()
                 lin_images = model(pixels)
+                # lin_black = model(black_point)
+
                 # All lin images matched to image `ref_image_num` is lin_images_matrix[:, :, ref_image_num, :]
                 # lin_images_matrix[:, a, b, :] represents the transformation of image (a) when converted to the exposure of (b).
                 lin_images_matrix = torch.stack([lin_images * gains(torch.arange(0, n_images), neutral_idx) for neutral_idx in torch.arange(0, n_images)], axis=2) # shape (batch_size, n_images, n_images, n_channels)
-                # lin_images_matrix = torch.stack([lin_images * gains(torch.arange(0, n_images), neutral_idx) for neutral_idx in [0, ref_image_num, n_images-1]], axis=2) # shape (batch_size, n_images, n_images, n_channels)
                 y_pred = lin_images_matrix
                 reconstructed_image = model.reverse(y_pred)
 
@@ -326,6 +332,8 @@ def derive_exp_function_gd(
                 loss = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (pixels.unsqueeze(1) < white_point))
                 loss += negative_linear_values_penalty(y_pred)
                 loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
+                # loss += negative_black_point_penalty(lin_black)
+                # TODO: Add penalty for if model.Cut is less than the black point.
                 # loss += (torch.mean(y_pred[:, ref_image_num, ref_image_num, :]) - 0.18)**2
 
                 loss.backward()

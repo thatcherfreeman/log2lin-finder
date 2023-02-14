@@ -36,7 +36,7 @@ def fit_bracketed_exposures(args):
         all_images = [cv2.blur(img, (args.blur_amt, args.blur_amt)) for img in all_images]
     print(f"Found {len(all_images)} files.")
 
-    # Identify which one has the most white pixels and the white point.
+    # Convert images to float, if not float already.
     all_images = np.stack(all_images, axis=0)
     print(f"Found data type {all_images.dtype}")
     if all_images.dtype not in (float, np.float32):
@@ -44,17 +44,23 @@ def fit_bracketed_exposures(args):
         format_max = np.iinfo(all_images.dtype).max
         all_images = all_images.astype(np.float32) / format_max
 
+    # Identify which one has the most white pixels and the white point.
     n, h, w, c = all_images.shape
     gray_images = np.mean(all_images, axis=3)
-    white_point = np.max(gray_images)
+    white_point = np.max(np.nanquantile(gray_images, 0.99, axis=1))
     flattened_images = gray_images.reshape(n, h*w) # shape (n, h*w)
     white_pixels_per_image = np.count_nonzero(flattened_images >= 0.95 * white_point, axis=1)
     brightest_picture_idx = np.argmax(white_pixels_per_image)
-    print(f"Picture with the most clipped pixels (> 0.9 * {white_point}): {files[brightest_picture_idx]}")
+    print(f"Picture with the most clipped pixels (> 0.95 * {white_point}): {files[brightest_picture_idx]}")
 
-    # Remove the bright image from the dataset.
-    all_images = np.concatenate([all_images[:brightest_picture_idx], all_images[brightest_picture_idx+1:]])
-    files.pop(brightest_picture_idx)
+    # Identify blackest image.
+    darkest_picture_idx = np.argmin(np.mean(flattened_images, axis=1))
+    darkest_value = np.min(all_images[darkest_picture_idx])
+    print(f"Picture with the black pixels (black point: {darkest_value}): {files[darkest_picture_idx]}")
+
+    # Remove the bright and dark image from the dataset.
+    all_images = np.delete(all_images, [brightest_picture_idx, darkest_picture_idx], axis=0)
+    files = np.delete(files, [brightest_picture_idx, darkest_picture_idx], axis=0)
     n, h, w, c = all_images.shape
     all_images = all_images.reshape(n, h*w, c)
 
@@ -63,7 +69,7 @@ def fit_bracketed_exposures(args):
     image_brightness_sort_idx = np.argsort(image_brightness)
     median_image_idx = int(0.5 * len(image_brightness_sort_idx))
     all_images = all_images[image_brightness_sort_idx]
-    files = np.array(files)[image_brightness_sort_idx]
+    files = files[image_brightness_sort_idx]
     image_brightness = image_brightness[image_brightness_sort_idx]
 
     # Identify exposure compensation to apply to each image
@@ -76,6 +82,7 @@ def fit_bracketed_exposures(args):
         images=all_images,
         ref_image_num=median_image_idx,
         white_point=white_point*0.95,
+        black_point=darkest_value,
         epochs=args.num_epochs,
         lr=args.learning_rate,
         use_scheduler=args.lrscheduler,

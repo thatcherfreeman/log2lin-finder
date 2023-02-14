@@ -28,14 +28,13 @@ python .\processor.py --dir_path "<path to images>" --num_epochs 100 --fixed_exp
 ```
 This took about 3 hours on my computer.
 
-## Tips for taking images
-1. Lock your camera off on a tripod, pointing at a scene with a variety of tones in it (IE not just a white wall or a test chart, shoot your bookshelf if you can't think of anything).
-2. Make sure your camera is set to be entirely manual settings, fix the Aperture, ISO, and white balance, do not use any ND filters. All exposure adjustments from here on should be done only with shutter speed.
-3. One image needs to have many clipped pixels so the software can identify the white point. This image will be removed from the dataset so it doesn't necessarily have to be the same scene as the rest of the images.
-4. Without moving your camera, shorten the shutter speed in one-stop increments until you can't shorten it anymore. Hopefully you have around 8 to 12 images.
-5. Make 16-bit tiffs or EXRs of each exposure and throw them in a folder somewhere, I'd recommend resizing them to 1080p.
-6. Run the script with `python processor.py --dir_path <directory of images>`, this should take around a minute.
-7. If the script is working, run it again with `--num_epochs X` with `X` in the range of 20-100 to get a more accurate result.
+## Image preperation
+* Follow the instructions in `image_capture_doc/image_capture.pdf`.
+* The solver assumes that there are several images that are taken at different exposures, as well as one image that shows the white point and an image taken with the lens cap on.
+* The log curve will be fit to the exposure bracket, and the white and black points will be derived from the white point image and the black point image. Put all of these images in a single directory, saved as Tiff or EXR.
+* For specifically the exposure bracket images, you should average together many frames (like 10 frames) of each video clip if possible.
+* Do not average together frames for the lens cap image.
+* If the solver does not correclty identify the white point image, then make a monochrome EXR of just the correct white point and use that instead.
 
 ## Verifying your results
 As a sanity check, the script will generate a rendering of your images in their log state, with an exposure adjustment being applied in Linear. If the log curve parameters are correct, then all images should look the same (excluding noise and clipped pixels). You can copy the log curve parameters into the Log Curve DCTL and see if you can match your images in Resolve by applying Gain after converting the images to Linear.
