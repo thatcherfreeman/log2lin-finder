@@ -55,7 +55,7 @@ def fit_bracketed_exposures(args):
 
     # Identify blackest image.
     darkest_picture_idx = np.argmin(np.mean(flattened_images, axis=1))
-    darkest_value = np.min(all_images[darkest_picture_idx])
+    darkest_value = np.mean(all_images[darkest_picture_idx])
     print(f"Picture with the black pixels (black point: {darkest_value}): {files[darkest_picture_idx]}")
 
     # Remove the bright and dark image from the dataset.

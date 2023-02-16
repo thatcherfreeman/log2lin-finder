@@ -320,7 +320,7 @@ def derive_exp_function_gd(
 
                 optim.zero_grad()
                 lin_images = model(pixels)
-                # lin_black = model(black_point)
+                lin_black = model(black_point)
 
                 # All lin images matched to image `ref_image_num` is lin_images_matrix[:, :, ref_image_num, :]
                 # lin_images_matrix[:, a, b, :] represents the transformation of image (a) when converted to the exposure of (b).
@@ -329,12 +329,11 @@ def derive_exp_function_gd(
                 reconstructed_image = model.reverse(y_pred)
 
                 # Ideally all of y_pred would be equal
-                loss = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (pixels.unsqueeze(1) < white_point))
-                loss += negative_linear_values_penalty(y_pred)
-                loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
+                loss = torch.log10(reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (pixels.unsqueeze(1) < white_point)))
+                # loss += negative_linear_values_penalty(y_pred)
                 # loss += negative_black_point_penalty(lin_black)
+                loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
                 # TODO: Add penalty for if model.Cut is less than the black point.
-                # loss += (torch.mean(y_pred[:, ref_image_num, ref_image_num, :]) - 0.18)**2
 
                 loss.backward()
                 optim.step()
