@@ -238,6 +238,18 @@ def negative_linear_values_penalty(y_linear):
     loss = torch.abs(negative)
     return torch.mean(loss[sample_mask])
 
+def low_cut_penalty(black_point, model: exp_function_simplified):
+    _, _, _, _, _, model_cut = model.compute_intermediate_values()
+    return torch.abs(torch.minimum(model_cut-black_point, torch.zeros_like(black_point)))
+
+def smoothness_penalty(model: exp_function_simplified):
+    base, offset, scale, slope, intercept, cut = model.compute_intermediate_values()
+    # y_cut = slope * cut + intercept
+    # log_slope = slope / scale * 1.0 / (torch.clamp((y_cut - offset) / scale, min=1e-7) * torch.log(base))
+    # return torch.abs(log_slope - (1.0/slope))
+    pow_slope = scale * torch.exp(torch.log(base) * cut)
+    return torch.abs(slope - pow_slope)
+
 def negative_black_point_penalty(black_lin):
     loss = torch.abs(torch.minimum(black_lin, torch.zeros_like(black_lin))) # zero if black_lin > 0
     return loss
@@ -263,6 +275,7 @@ def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-
                 optim.zero_grad()
                 y_pred = model(x)
                 loss = torch.log(loss_fn(torch.log(y_pred + 0.5), torch.log(y + 0.5)))
+                loss += 0.1 * smoothness_penalty(model)
 
                 error = loss_fn(y, y_pred).detach()
                 loss.backward()
@@ -331,9 +344,10 @@ def derive_exp_function_gd(
                 # Ideally all of y_pred would be equal
                 loss = torch.log10(reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (pixels.unsqueeze(1) < white_point)))
                 # loss += negative_linear_values_penalty(y_pred)
-                # loss += negative_black_point_penalty(lin_black)
+                # loss += 0.1 * negative_black_point_penalty(lin_black)
                 loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
-                # TODO: Add penalty for if model.Cut is less than the black point.
+                loss += 0.1 * low_cut_penalty(torch.tensor(black_point), model)
+                loss += 0.1 * smoothness_penalty(model)
 
                 loss.backward()
                 optim.step()
