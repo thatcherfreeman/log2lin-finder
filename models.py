@@ -342,7 +342,8 @@ def derive_exp_function_gd(
                 reconstructed_image = model.reverse(y_pred)
 
                 # Ideally all of y_pred would be equal
-                loss = torch.log10(reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (reconstructed_image > black_point) & (pixels.unsqueeze(1) < white_point)))
+                error = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (reconstructed_image > black_point) & (y_pred > 0.0) & (pixels.unsqueeze(1) < white_point))
+                loss = torch.log10(error)
                 # loss += negative_linear_values_penalty(y_pred)
                 # loss += 0.1 * negative_black_point_penalty(lin_black)
                 loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
