@@ -43,10 +43,17 @@ def main():
         default=10000,
         help='number of points to plot.'
     )
+    parser.add_argument(
+        '--swap',
+        action='store_true',
+        help='swap x and y axes.'
+    )
     args = parser.parse_args()
     print(args)
     x_img = open_image(args.x_file)
     y_img = open_image(args.y_file)
+    if args.swap:
+        x_img, y_img = y_img, x_img
     print("X image shape: ", x_img.shape)
     print("Y image shape: ", y_img.shape)
     assert x_img.shape == y_img.shape
