@@ -1,5 +1,6 @@
-import cv2
 import os
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
+import cv2
 import numpy as np
 import argparse
 
@@ -127,27 +128,62 @@ def fit_bracketed_exposures(args):
     plt.legend()
     plt.show()
 
-    # Plot the log curve as a sanity check
-    x_values = np.linspace(start=-8, stop=8, num=4000)
-    x_values_lin = 0.18 * (2**x_values)
+    models.plot_log_curve(model)
+
+
+def fit_two_images(args):
+    log_image = open_image(args.log_image)
+    lin_image = open_image(args.lin_image)
+
+    assert log_image.shape == lin_image.shape and len(log_image.shape) == 3
+    h, w, c = log_image.shape
+    flattened_log_image = np.reshape(log_image, (h*w, c))
+    flattened_lin_image = np.reshape(lin_image, (h*w, c))
+
+    model = models.derive_exp_function_gd_log_lin_images(
+        log_image=flattened_log_image,
+        lin_image=flattened_lin_image,
+        black_point=np.min(log_image),
+        epochs=args.num_epochs,
+        lr=args.learning_rate,
+        use_scheduler=args.lrscheduler,
+    )
+    found_parameters = model.get_log_parameters()
+    print(found_parameters)
+    print(found_parameters.exp_curve_to_str())
+    with open(os.path.join(os.path.dirname(args.log_image), "parameters.csv"), "w") as f:
+        f.write(found_parameters.to_csv())
+    models.plot_log_curve(model)
+
     with torch.no_grad():
-        y_values = model.reverse(torch.tensor(x_values_lin)).detach().numpy()
-        cut = model.get_log_parameters().cut
-    plt.plot(x_values[y_values < cut], y_values[y_values < cut], color='red')
-    plt.plot(x_values[y_values >= cut], y_values[y_values >= cut], color='blue')
-    plt.axvline(x=0.0)
-    plt.axhline(y=0.0)
-    plt.title("Log curve")
+        reconstructed_lin_image = model(torch.tensor(log_image)).detach().numpy()
+        flattened_reconstructed_lin_image = np.reshape(reconstructed_lin_image, (h*w, c))
+        reconstructed_log_image = model.reverse(torch.tensor(lin_image)).detach().numpy()
+        flattened_reconstructed_log_image = np.reshape(reconstructed_log_image, (h*w, c))
+
+    # plot_images(
+    #     np.concatenate([log_image, reconstructed_log_image, lin_image, reconstructed_lin_image], axis=0),
+    #     [
+    #         "log image",
+    #         "reconstructed log image",
+    #         "lin image",
+    #         "reconstructed lin image",
+    #     ],
+    # )
+
+    num_samples = 1000
+    sampled_coords = np.random.choice(h*w, num_samples)
+    for i, color in enumerate(['red', 'green', 'blue']):
+        plt.scatter(flattened_log_image[sampled_coords, i], flattened_reconstructed_log_image[sampled_coords, i], alpha=0.05, marker='.', color=color, edgecolors=None)
+    plt.title("Comparison of log images")
     plt.show()
 
-    plt.plot(x_values_lin[y_values < cut], y_values[y_values < cut], color='red')
-    plt.plot(x_values_lin[y_values >= cut], y_values[y_values >= cut], color='blue')
-    plt.axvline(x=0.18, alpha=0.5)
-    plt.axvline(x=0.0)
-    plt.axhline(y=0.0)
-    plt.title("lin/log curve")
+    for i, color in enumerate(['red', 'green', 'blue']):
+        plt.scatter(flattened_lin_image[sampled_coords, i], flattened_reconstructed_lin_image[sampled_coords, i], alpha=0.05, marker='.', color=color, edgecolors=None)
+    plt.title("Comparison of lin images")
+    plt.xscale('log')
+    plt.yscale('log')
     plt.show()
-
 
 
 def fit_lut_file(args):
@@ -233,12 +269,26 @@ if __name__ == "__main__":
     parser.add_argument(
         '--dir_path',
         default=None,
+        type=str,
         help='Specify the directory to load the images from.',
     )
     parser.add_argument(
         '--lut_file',
         default=None,
+        type=str,
         help='Specify the 1D file to load from.',
+    )
+    parser.add_argument(
+        '--log_image',
+        default=None,
+        type=str,
+        help='Use this alongside lin_image to indicate a target log and lin image of the same scene (same primaries)'
+    )
+    parser.add_argument(
+        '--lin_image',
+        default=None,
+        type=str,
+        help='Use this alongside lin_image to indicate a target log and lin image of the same scene (same primaries)'
     )
     parser.add_argument(
         '--learning_rate',
@@ -269,7 +319,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    if args.dir_path is not None and args.lut_file is None:
+    if args.log_image is not None and args.lin_image is not None:
+        fit_two_images(args)
+    elif args.dir_path is not None and args.lut_file is None:
         fit_bracketed_exposures(args)
     elif args.lut_file is not None and args.dir_path is None:
         fit_lut_file(args)

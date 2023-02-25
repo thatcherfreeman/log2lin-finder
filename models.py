@@ -180,6 +180,28 @@ class exp_function_simplified(nn.Module):
             cut = float(cut),
         )
 
+def plot_log_curve(model: exp_function_simplified):
+    # Plot the log curve as a sanity check
+    x_values = np.linspace(start=-8, stop=8, num=4000)
+    x_values_lin = 0.18 * (2**x_values)
+    with torch.no_grad():
+        y_values = model.reverse(torch.tensor(x_values_lin)).detach().numpy()
+        cut = model.get_log_parameters().cut
+    plt.plot(x_values[y_values < cut], y_values[y_values < cut], color='red')
+    plt.plot(x_values[y_values >= cut], y_values[y_values >= cut], color='blue')
+    plt.axvline(x=0.0)
+    plt.axhline(y=0.0)
+    plt.title("Log curve")
+    plt.show()
+
+    plt.plot(x_values_lin[y_values < cut], y_values[y_values < cut], color='red')
+    plt.plot(x_values_lin[y_values >= cut], y_values[y_values >= cut], color='blue')
+    plt.axvline(x=0.18, alpha=0.5)
+    plt.axvline(x=0.0)
+    plt.axhline(y=0.0)
+    plt.title("lin/log curve")
+    plt.show()
+
 
 def percent_error_masked(y, sample_mask):
     # y is of shape (batch_size, n_images, 3), need to compare the pixel values for all images in this set.
@@ -231,6 +253,9 @@ def reconstruction_error(y, y_original, sample_mask):
     delta = torch.abs(y - y_original)
     # delta = (y - y_target)**2
     return torch.mean(delta[sample_mask])
+
+def log_lin_image_error(lin_gt, lin_pred):
+    return torch.mean(torch.abs(lin_pred - lin_gt))
 
 def negative_linear_values_penalty(y_linear):
     sample_mask = ~torch.isnan(y_linear)
@@ -300,6 +325,62 @@ def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-
     return model
 
 
+def derive_exp_function_gd_log_lin_images(
+    log_image: np.ndarray,
+    lin_image: np.ndarray,
+    black_point: float,
+    epochs: int=20,
+    lr=1e-3,
+    use_scheduler=True,
+) -> nn.Module:
+    model = exp_function_simplified(INITIAL_GUESS)
+    assert (log_image.shape == lin_image.shape) and (len(log_image.shape) == 2)
+    ds = data.TensorDataset(torch.tensor(log_image), torch.tensor(lin_image))
+    dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
+
+    optim = torch.optim.Adam(model.parameters(), lr=lr)
+    sched = torch.optim.lr_scheduler.MultiplicativeLR(optim, lambda x: (0.5 if x % 20 == 0 else 1.0))
+    errors = []
+    losses = []
+    model.train()
+    for e in range(epochs):
+        print(f"Training epoch {e}")
+        with tqdm(total=len(ds)) as bar:
+            for batch_num, (log_pixels, lin_pixels) in enumerate(dl):
+                # log_pixels and lin_pixels of shape (batch_size, 3)
+                batch_size = log_pixels.shape[0]
+
+                optim.zero_grad()
+                lin_pred = model(log_pixels)
+                log_pred = model.reverse(lin_pixels)
+                lin_black = model(black_point)
+
+                # Ideally all of y_pred would be equal
+                error = log_lin_image_error(lin_pixels, lin_pred) + log_lin_image_error(log_pixels, log_pred)
+                loss = torch.log10(error)
+                # loss += negative_linear_values_penalty(y_pred)
+                # loss += 0.1 * negative_black_point_penalty(lin_black)
+                # loss += 0.1 * low_cut_penalty(torch.tensor(black_point), model)
+                # loss += 0.1 * smoothness_penalty(model)
+
+                loss.backward()
+                optim.step()
+
+                bar.update(batch_size)
+                bar.set_postfix(loss=float(loss), error=float(error), params=model.get_log_parameters(), lr=sched.get_last_lr())
+                errors.append(float(error))
+                losses.append(float(loss))
+
+            if use_scheduler:
+                sched.step()
+
+    plt.figure()
+    plt.xlim(0, len(errors))
+    plt.plot(range(len(errors)), errors)
+    plt.plot(range(len(losses)), losses)
+    plt.show()
+    return model
+
 def derive_exp_function_gd(
     images: np.ndarray,
     ref_image_num: int,
@@ -352,10 +433,6 @@ def derive_exp_function_gd(
 
                 loss.backward()
                 optim.step()
-
-                # error = err_fn(y_pred, sample_mask).detach()
-                # error = error_fn_2(y_pred, ref_image_num, sample_mask).detach()
-                error = reconstruction_error(reconstructed_image[:, :, ref_image_num, :], pixels[:, [ref_image_num], :], sample_mask=(reconstructed_image[:, :, ref_image_num, :] < white_point) & (pixels[:, [ref_image_num], :] < white_point))
 
                 bar.update(batch_size)
                 bar.set_postfix(loss=float(loss), error=float(error), params=model.get_log_parameters(), lr=sched.get_last_lr())
