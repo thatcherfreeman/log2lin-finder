@@ -89,6 +89,7 @@ def fit_bracketed_exposures(args):
         use_scheduler=args.lrscheduler,
         exposures=torch.tensor(default_exposure_comp, dtype=float).unsqueeze(1),
         fixed_exposures=args.fixed_exposures,
+        initial_parameters_fn=args.initial_parameters,
     )
 
     print(gains.get_gains(median_image_idx))
@@ -147,6 +148,7 @@ def fit_two_images(args):
         epochs=args.num_epochs,
         lr=args.learning_rate,
         use_scheduler=args.lrscheduler,
+        initial_parameters_fn=args.initial_parameters,
     )
     found_parameters = model.get_log_parameters()
     print(found_parameters)
@@ -161,25 +163,21 @@ def fit_two_images(args):
         reconstructed_log_image = model.reverse(torch.tensor(lin_image)).detach().numpy()
         flattened_reconstructed_log_image = np.reshape(reconstructed_log_image, (h*w, c))
 
-    # plot_images(
-    #     np.concatenate([log_image, reconstructed_log_image, lin_image, reconstructed_lin_image], axis=0),
-    #     [
-    #         "log image",
-    #         "reconstructed log image",
-    #         "lin image",
-    #         "reconstructed lin image",
-    #     ],
-    # )
-
-    num_samples = 1000
+    num_samples = 10000
     sampled_coords = np.random.choice(h*w, num_samples)
     for i, color in enumerate(['red', 'green', 'blue']):
         plt.scatter(flattened_log_image[sampled_coords, i], flattened_reconstructed_log_image[sampled_coords, i], alpha=0.05, marker='.', color=color, edgecolors=None)
+    min_val, max_val = np.min(flattened_log_image), np.max(flattened_log_image)
+    samples = np.linspace(min_val, max_val, 50)
+    plt.plot(samples, samples)
     plt.title("Comparison of log images")
     plt.show()
 
     for i, color in enumerate(['red', 'green', 'blue']):
         plt.scatter(flattened_lin_image[sampled_coords, i], flattened_reconstructed_lin_image[sampled_coords, i], alpha=0.05, marker='.', color=color, edgecolors=None)
+    min_val, max_val = np.min(flattened_lin_image), np.max(flattened_lin_image)
+    samples = np.linspace(min_val, max_val, 50)
+    plt.plot(samples, samples)
     plt.title("Comparison of lin images")
     plt.xscale('log')
     plt.yscale('log')
@@ -199,6 +197,7 @@ def fit_lut_file(args):
         epochs=epochs,
         lr=args.learning_rate,
         use_scheduler=args.lrscheduler,
+        initial_parameters_fn=args.initial_parameters,
     )
     print(model.get_log_parameters())
 
@@ -314,6 +313,13 @@ if __name__ == "__main__":
         default=0,
         type=int,
         help='specifies amount to blur input images, to reduce noise.',
+        required=False,
+    )
+    parser.add_argument(
+        '--initial_parameters',
+        type=str,
+        default=None,
+        help='Initialize the parameters with this csv.',
         required=False,
     )
     args = parser.parse_args()

@@ -1,3 +1,6 @@
+import csv
+from typing import Dict, List, Tuple
+
 import torch
 from torch import nn
 from torch.utils import data
@@ -6,9 +9,6 @@ from tqdm import tqdm
 import numpy as np
 
 from matplotlib import pyplot as plt
-import argparse
-import sys
-from typing import Dict, List, Tuple
 from lut_parser import lut_1d_properties
 
 
@@ -71,6 +71,22 @@ cut,{self.cut}
 """
         return output
 
+    @staticmethod
+    def from_csv(csv_fn: str) -> "exp_parameters_simplified":
+        parsed_dict = {}
+        with open(csv_fn, 'r') as f:
+            dict_reader = csv.DictReader(f)
+            for d in dict_reader:
+                parsed_dict[d['name']] = float(d['value'])
+        return exp_parameters_simplified(
+            base=parsed_dict['base'],
+            offset=parsed_dict['offset'],
+            scale=parsed_dict['scale'],
+            slope=parsed_dict['slope'],
+            intercept=parsed_dict['intercept'],
+            cut=parsed_dict['cut']
+        )
+
 INITIAL_GUESS = exp_parameters_simplified(
     base=0.376,
     offset=2.9e-4,
@@ -131,7 +147,7 @@ class gain_table(nn.Module):
 class exp_function_simplified(nn.Module):
     def __init__(self, parameters: exp_parameters_simplified):
         super(exp_function_simplified, self).__init__()
-        self.base = nn.parameter.Parameter(torch.tensor(parameters.base))
+        self.base = nn.parameter.Parameter(1.0 / torch.log10(torch.tensor(parameters.base)))
         self.offset = nn.parameter.Parameter(torch.tensor(parameters.offset))
         self.scale = nn.parameter.Parameter(torch.tensor(parameters.scale))
         self.slope = nn.parameter.Parameter(torch.tensor(parameters.slope))
@@ -284,9 +300,10 @@ def middle_gray_penalty(lin_img):
     pos_mask = lin_img > 0.0
     return (torch.mean(torch.log2(lin_img)[pos_mask]) - torch.log2(torch.tensor(0.18)))**2
 
-def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True) -> nn.Module:
+def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True, initial_parameters_fn=None) -> nn.Module:
     # torch.autograd.set_detect_anomaly(True)
-    model = exp_function_simplified(INITIAL_GUESS)
+    initial_parameters = INITIAL_GUESS if initial_parameters_fn is None else exp_parameters_simplified.from_csv(initial_parameters_fn)
+    model = exp_function_simplified(initial_parameters)
     dl = data.DataLoader(dataset_from_1d_lut(lut), batch_size=lut.size)
     loss_fn = nn.L1Loss(reduction='mean')
     optim = torch.optim.Adam(model.parameters(), lr=lr)
@@ -332,8 +349,10 @@ def derive_exp_function_gd_log_lin_images(
     epochs: int=20,
     lr=1e-3,
     use_scheduler=True,
+    initial_parameters_fn=None,
 ) -> nn.Module:
-    model = exp_function_simplified(INITIAL_GUESS)
+    initial_parameters = INITIAL_GUESS if initial_parameters_fn is None else exp_parameters_simplified.from_csv(initial_parameters_fn)
+    model = exp_function_simplified(initial_parameters)
     assert (log_image.shape == lin_image.shape) and (len(log_image.shape) == 2)
     ds = data.TensorDataset(torch.tensor(log_image), torch.tensor(lin_image))
     dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
@@ -391,11 +410,13 @@ def derive_exp_function_gd(
     use_scheduler=True,
     exposures=None,
     fixed_exposures=False,
+    initial_parameters_fn=None,
 ) -> Tuple[nn.Module, nn.Module]:
     n_images = images.shape[0]
 
     # torch.autograd.set_detect_anomaly(True)
-    model = exp_function_simplified(INITIAL_GUESS)
+    initial_parameters = INITIAL_GUESS if initial_parameters_fn is None else exp_parameters_simplified.from_csv(initial_parameters_fn)
+    model = exp_function_simplified(initial_parameters)
     gains = gain_table(n_images, exposures, fixed_exposures)
     ds = pixel_dataset(images)
     dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
