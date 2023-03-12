@@ -6,6 +6,12 @@ import argparse
 import matplotlib.pyplot as plt
 
 
+def convert_to_hsv(image: np.ndarray) -> np.ndarray:
+    assert len(image.shape) == 3
+    out = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    print(np.max(out[:, :, 0]))
+    return out
+
 
 def open_image(image_fn: str) -> np.ndarray:
     os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
@@ -49,6 +55,13 @@ def main():
         action='store_true',
         help='swap x and y axes.'
     )
+    parser.add_argument(
+        '--mode',
+        choices=['huesat', 'codevalue'],
+        default='codevalue',
+        help='Choose the kind of plot.'
+    )
+
     args = parser.parse_args()
     print(args)
     x_img = open_image(args.x_file)
@@ -68,20 +81,42 @@ def main():
 
     sampled_coords = np.random.choice(h, num_samples), np.random.choice(w, num_samples)
 
+    if args.mode == 'huesat':
+        x_img = convert_to_hsv(x_img)
+        y_img = convert_to_hsv(y_img)
+
     x_samples = x_img[sampled_coords[0], sampled_coords[1]] # num_samples, c
     y_samples = y_img[sampled_coords[0], sampled_coords[1]]
 
-    colors = ['red', 'green', 'blue']
-    for i in range(c):
-        if i < len(colors):
-            color = colors[i]
-        else:
-            color = np.random.rand(3,)
-        plt.scatter(x_samples[:, i], y_samples[:, i], marker='.', alpha=0.1, color=color)
-    max_val = np.max([x_img, y_img])
-    min_val = np.min([x_img, y_img])
-    samples = np.linspace(min_val, max_val, 50)
-    plt.plot(samples, samples)
+
+    if args.mode == 'codevalue':
+        colors = ['red', 'green', 'blue']
+        for i in range(c):
+            if i < len(colors):
+                color = colors[i]
+            else:
+                color = np.random.rand(3,)
+            plt.scatter(x_samples[:, i], y_samples[:, i], marker='.', alpha=0.1, color=color)
+        max_val = np.max([x_img, y_img])
+        min_val = np.min([x_img, y_img])
+        samples = np.linspace(min_val, max_val, 50)
+        plt.plot(samples, samples)
+
+
+
+    elif args.mode == 'huesat':
+        fig, ax1 = plt.subplots()
+        sample_mask = x_samples[:, 1] > 0.1
+        x_samples = x_samples[sample_mask]
+        y_samples = y_samples[sample_mask]
+
+        plt.scatter(x_samples[:, 0], (y_samples[:, 0] - x_samples[:, 0]) / 360, color='red', marker='.', alpha=0.1, label='Hue')
+        plt.scatter(x_samples[:, 0], y_samples[:, 1] / x_samples[:, 1], color='green', marker='.', alpha=0.1, label='Saturation')
+        plt.hlines(1.0, 0.0, 360.0)
+        plt.hlines(0.0, 0.0, 360.0)
+        plt.legend()
+
+
 
     if args.xlog:
         plt.xscale('log')
@@ -89,7 +124,6 @@ def main():
         plt.yscale('log')
     plt.show()
     print("MSE: ", np.mean((x_img - y_img)**2))
-
 
 
 if __name__ == "__main__":

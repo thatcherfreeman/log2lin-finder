@@ -3,3 +3,4 @@ torch
 tqdm
 matplotlib
 opencv-python
+pylint
