@@ -57,7 +57,7 @@ def main():
     )
     parser.add_argument(
         '--mode',
-        choices=['huesat', 'codevalue'],
+        choices=['huesat', 'codevalue', 'satsat'],
         default='codevalue',
         help='Choose the kind of plot.'
     )
@@ -81,7 +81,7 @@ def main():
 
     sampled_coords = np.random.choice(h, num_samples), np.random.choice(w, num_samples)
 
-    if args.mode == 'huesat':
+    if args.mode in ('huesat', 'satsat'):
         x_img = convert_to_hsv(x_img)
         y_img = convert_to_hsv(y_img)
 
@@ -102,8 +102,6 @@ def main():
         samples = np.linspace(min_val, max_val, 50)
         plt.plot(samples, samples)
 
-
-
     elif args.mode == 'huesat':
         fig, ax1 = plt.subplots()
         sample_mask = x_samples[:, 1] > 0.1
@@ -116,7 +114,13 @@ def main():
         plt.hlines(0.0, 0.0, 360.0)
         plt.legend()
 
-
+    elif args.mode == 'satsat':
+        plt.scatter(x_samples[:, 1], y_samples[:, 1], color='green', marker='.', alpha=0.1, label='Saturation')
+        max_val = np.max([x_img[:, 1], y_img[:, 1]])
+        min_val = np.min([x_img[:, 1], y_img[:, 1]])
+        min_val, max_val = 0.0, 1.0
+        samples = np.linspace(min_val, max_val, 50)
+        plt.plot(samples, samples)
 
     if args.xlog:
         plt.xscale('log')
