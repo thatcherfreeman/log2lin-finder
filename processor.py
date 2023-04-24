@@ -90,6 +90,7 @@ def fit_bracketed_exposures(args):
         exposures=torch.tensor(default_exposure_comp, dtype=float).unsqueeze(1),
         fixed_exposures=args.fixed_exposures,
         initial_parameters_fn=args.initial_parameters,
+        batch_size=args.batch_size,
     )
 
     print(gains.get_gains(median_image_idx))
@@ -106,6 +107,7 @@ def fit_bracketed_exposures(args):
 
     model.eval()
     output_images = []
+    output_lin_images = []
     titles = []
     with torch.no_grad():
         for i, (image, fn) in enumerate(zip(input_images, files)):
@@ -113,9 +115,11 @@ def fit_bracketed_exposures(args):
             lin_image = model(torch.tensor(image)) * gain
             log_image = model.reverse(lin_image)
             # gamma_image = (32*lin_image)**0.45
+            output_lin_images.append(lin_image.detach().numpy())
             output_images.append(log_image.detach().numpy())
             titles.append(f'file {fn} gain {float(gain)}')
     output_images = np.stack(output_images, axis=0)
+    output_lin_images = np.stack(output_lin_images, axis=0)
     plot_images(output_images, titles)
 
     # Plot the median image vs the reconstructed exposure compensated images to see the accuracy
@@ -125,7 +129,7 @@ def fit_bracketed_exposures(args):
         sampled_output = np.mean(output_images[i, sampled_coords[0], sampled_coords[1], :], axis=1) # (1000, 3)
         plt.scatter(sampled_input, sampled_output, label=f"Image {i}", marker='.', alpha=0.1, edgecolors=None)
     plt.plot([np.min(sampled_input), np.max(sampled_input)], [np.min(sampled_input), np.max(sampled_input)], color='black')
-    plt.title("comparison of images")
+    plt.title("comparison of log images")
     plt.legend()
     plt.show()
 
@@ -149,6 +153,7 @@ def fit_two_images(args):
         lr=args.learning_rate,
         use_scheduler=args.lrscheduler,
         initial_parameters_fn=args.initial_parameters,
+        batch_size=args.batch_size,
     )
     found_parameters = model.get_log_parameters()
     print(found_parameters)
@@ -320,6 +325,13 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help='Initialize the parameters with this csv.',
+        required=False,
+    )
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        default=10000,
+        help='size of each batch',
         required=False,
     )
     args = parser.parse_args()

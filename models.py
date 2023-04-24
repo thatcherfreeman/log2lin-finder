@@ -147,7 +147,7 @@ class gain_table(nn.Module):
 class exp_function_simplified(nn.Module):
     def __init__(self, parameters: exp_parameters_simplified):
         super(exp_function_simplified, self).__init__()
-        self.base = nn.parameter.Parameter(1.0 / torch.log10(torch.tensor(parameters.base)))
+        self.base = nn.parameter.Parameter(torch.log10(torch.tensor(parameters.base)))
         self.offset = nn.parameter.Parameter(torch.tensor(parameters.offset))
         self.scale = nn.parameter.Parameter(torch.tensor(parameters.scale))
         self.slope = nn.parameter.Parameter(torch.tensor(parameters.slope))
@@ -155,12 +155,13 @@ class exp_function_simplified(nn.Module):
         self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
 
     def compute_intermediate_values(self):
-        base = torch.pow(10.0, 1.0/self.base)
+        base = torch.pow(10.0, self.base)
         offset = self.offset
         scale = self.scale
         intercept = self.intercept
         cut = self.cut
-        slope = torch.abs(scale * torch.pow(base, cut) + offset - intercept) / torch.abs(cut)
+        # slope = torch.abs(scale * torch.pow(base, cut) + offset - intercept) / torch.abs(cut)
+        slope = (scale * torch.pow(base, cut) + offset - intercept) / torch.abs(cut)
 
         # self.cut = nn.parameter.Parameter(cut, requires_grad=False)
         return base, offset, scale, slope, intercept, cut
@@ -251,7 +252,7 @@ def percent_error_target(y, target_idx, sample_mask):
     return torch.mean(delta[sample_mask])
 
 def error_fn_2(y, target_idx, sample_mask):
-    y = torch.log(torch.max(y, torch.tensor(1e-8)))
+    y = torch.log(torch.maximum(y, torch.tensor(1e-8)))
     y_target = y[:, [target_idx], :] # shape (batch_size, 1, 3)
 
     answer_mask = torch.ones_like(y, dtype=bool)
@@ -266,8 +267,8 @@ def reconstruction_error(y, y_original, sample_mask):
     # assume target_idx points to the one with gain 1.0
     # Assume y and y_original are both the log encoded images, just take L2 or L1 error.
     sample_mask = sample_mask & ~torch.isnan(y)
-    delta = torch.abs(y - y_original)
-    # delta = (y - y_target)**2
+    # delta = torch.abs(y - y_original)
+    delta = (y - y_original)**2
     return torch.mean(delta[sample_mask])
 
 def log_lin_image_error(lin_gt, lin_pred):
@@ -276,28 +277,33 @@ def log_lin_image_error(lin_gt, lin_pred):
 def negative_linear_values_penalty(y_linear):
     sample_mask = ~torch.isnan(y_linear)
     negative = torch.minimum(y_linear, torch.zeros_like(y_linear)) # zero out positive values.
-    loss = torch.abs(negative)
-    return torch.mean(loss[sample_mask])
+    loss = negative**2
+    return torch.sum(loss[sample_mask]) / torch.numel(y_linear)
 
 def low_cut_penalty(black_point, model: exp_function_simplified):
     _, _, _, _, _, model_cut = model.compute_intermediate_values()
     return torch.abs(torch.minimum(model_cut-black_point, torch.zeros_like(black_point)))
+
+def high_intercept_penalty(model: exp_function_simplified):
+    _, _, _, _, intercept, _ = model.compute_intermediate_values()
+    return torch.maximum(intercept, torch.zeros_like(intercept))**2
 
 def smoothness_penalty(model: exp_function_simplified):
     base, offset, scale, slope, intercept, cut = model.compute_intermediate_values()
     # y_cut = slope * cut + intercept
     # log_slope = slope / scale * 1.0 / (torch.clamp((y_cut - offset) / scale, min=1e-7) * torch.log(base))
     # return torch.abs(log_slope - (1.0/slope))
-    pow_slope = scale * torch.exp(torch.log(base) * cut)
-    return torch.abs(slope - pow_slope)
+    # pow_slope = scale * torch.exp(torch.log(base) * cut)
+    pow_slope = scale * torch.pow(base, cut) * torch.log(base)
+    return (slope - pow_slope)**2
 
 def negative_black_point_penalty(black_lin):
-    loss = torch.abs(torch.minimum(black_lin, torch.zeros_like(black_lin))) # zero if black_lin > 0
+    loss = torch.minimum(black_lin, torch.zeros_like(black_lin))**2 # zero if black_lin > 0
     return loss
 
 def middle_gray_penalty(lin_img):
     # Given "properly exposed" linear image, penalize if it doesn't average at middle gray
-    pos_mask = lin_img > 0.0
+    pos_mask = (lin_img > 1e-6) & (~torch.isnan(torch.log2(lin_img)))
     return (torch.mean(torch.log2(lin_img)[pos_mask]) - torch.log2(torch.tensor(0.18)))**2
 
 def derive_exp_function_gd_lut(lut: lut_1d_properties, epochs: int = 100, lr=1e-3, use_scheduler=True, initial_parameters_fn=None) -> nn.Module:
@@ -350,12 +356,13 @@ def derive_exp_function_gd_log_lin_images(
     lr=1e-3,
     use_scheduler=True,
     initial_parameters_fn=None,
+    batch_size=10000,
 ) -> nn.Module:
     initial_parameters = INITIAL_GUESS if initial_parameters_fn is None else exp_parameters_simplified.from_csv(initial_parameters_fn)
     model = exp_function_simplified(initial_parameters)
     assert (log_image.shape == lin_image.shape) and (len(log_image.shape) == 2)
     ds = data.TensorDataset(torch.tensor(log_image), torch.tensor(lin_image))
-    dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
+    dl = data.DataLoader(ds, shuffle=True, batch_size=batch_size)
 
     optim = torch.optim.Adam(model.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.MultiplicativeLR(optim, lambda x: (0.5 if x % 20 == 0 else 1.0))
@@ -380,7 +387,7 @@ def derive_exp_function_gd_log_lin_images(
                 # loss += negative_linear_values_penalty(y_pred)
                 # loss += 0.1 * negative_black_point_penalty(lin_black)
                 # loss += 0.1 * low_cut_penalty(torch.tensor(black_point), model)
-                # loss += 0.1 * smoothness_penalty(model)
+                loss += 0.1 * smoothness_penalty(model)
 
                 loss.backward()
                 optim.step()
@@ -411,6 +418,7 @@ def derive_exp_function_gd(
     exposures=None,
     fixed_exposures=False,
     initial_parameters_fn=None,
+    batch_size=10000,
 ) -> Tuple[nn.Module, nn.Module]:
     n_images = images.shape[0]
 
@@ -419,7 +427,7 @@ def derive_exp_function_gd(
     model = exp_function_simplified(initial_parameters)
     gains = gain_table(n_images, exposures, fixed_exposures)
     ds = pixel_dataset(images)
-    dl = data.DataLoader(ds, shuffle=True, batch_size=10000)
+    dl = data.DataLoader(ds, shuffle=True, batch_size=batch_size)
 
     optim = torch.optim.Adam(list(model.parameters()) + list(gains.parameters()), lr=lr)
     sched = torch.optim.lr_scheduler.MultiplicativeLR(optim, lambda x: (0.5 if x % 20 == 0 else 1.0))
@@ -445,12 +453,15 @@ def derive_exp_function_gd(
 
                 # Ideally all of y_pred would be equal
                 error = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (reconstructed_image > black_point) & (y_pred > 0.0) & (pixels.unsqueeze(1) < white_point))
-                loss = torch.log10(error)
-                # loss += negative_linear_values_penalty(y_pred)
+                loss = torch.tensor(0.0)
+                loss += error
+                loss += 0.1 * negative_linear_values_penalty(y_pred)
                 # loss += 0.1 * negative_black_point_penalty(lin_black)
-                loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
+                # loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
                 loss += 0.1 * low_cut_penalty(torch.tensor(black_point), model)
-                loss += 0.1 * smoothness_penalty(model)
+                loss += 0.1 * high_intercept_penalty(model)
+                loss += 0.01 * smoothness_penalty(model)
+                # loss = torch.log10(loss)
 
                 loss.backward()
                 optim.step()
