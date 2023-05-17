@@ -70,6 +70,11 @@ def main():
         x_img, y_img = y_img, x_img
     print("X image shape: ", x_img.shape)
     print("Y image shape: ", y_img.shape)
+    if x_img.shape != y_img.shape:
+        print(f"Shapes mismatched, resizing Y image to {x_img.shape}")
+        y_img = cv2.resize(y_img, (x_img.shape[1], x_img.shape[0]), interpolation=cv2.INTER_AREA)
+        print(y_img.shape)
+
     assert x_img.shape == y_img.shape
     assert len(x_img.shape) == 3
     h, w, c = x_img.shape
