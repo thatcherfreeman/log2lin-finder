@@ -1,5 +1,5 @@
 import csv
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import torch
 from torch import nn
@@ -7,6 +7,7 @@ from torch.utils import data
 from dataclasses import dataclass
 from tqdm import tqdm
 import numpy as np
+import os
 
 from matplotlib import pyplot as plt
 from lut_parser import lut_1d_properties
@@ -124,7 +125,7 @@ class gain_table(nn.Module):
         self.table = nn.Embedding(num_images, 1)
         # let the table learn the different exposures of the images from a neutral starting point
         self.table.weight.data.fill_(0.0)
-        self.num_images = num_images
+        self.num_images = torch.tensor(num_images, dtype=torch.int32)
         if exposures is not None:
             self.table.weight.data = exposures
             self.table.requires_grad_(not fixed_exposures)
@@ -132,10 +133,10 @@ class gain_table(nn.Module):
     def forward(self, x, neutral_idx):
         # check that x is not equal to the frozen one, look up the others in the table.
         if type(neutral_idx) != torch.Tensor:
-            neutral_idx = torch.tensor(neutral_idx)
+            neutral_idx = torch.tensor(neutral_idx, dtype=torch.int32)
         neutral_gain = self.table(neutral_idx)
         table_result = self.table(x) - neutral_gain # (n, 1)
-        return torch.pow(2.0, table_result)
+        return torch.pow(torch.tensor(2.0, dtype=torch.float32), table_result).type(torch.float32)
 
     def forward_matrix(self):
         return torch.cat([self.forward(torch.arange(0, self.num_images), neutral) for neutral in torch.arange(0, self.num_images)], axis=1)
@@ -155,7 +156,7 @@ class exp_function_simplified(nn.Module):
         self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
 
     def compute_intermediate_values(self):
-        base = torch.pow(10.0, self.base)
+        base = torch.pow(torch.tensor(10.0), self.base)
         offset = self.offset
         scale = self.scale
         intercept = self.intercept
@@ -261,14 +262,14 @@ def error_fn_2(y, target_idx, sample_mask):
     delta = torch.abs(y - y_target)
     return torch.mean(delta[sample_mask])
 
-def reconstruction_error(y, y_original, sample_mask):
+def reconstruction_error(y, y_original, sample_mask, device):
     # Assume y of shape (batch_size, n_images, n_images, 3)
     # assume y_original of shape (batch_size, 1, n_images, 3)
     # assume target_idx points to the one with gain 1.0
     # Assume y and y_original are both the log encoded images, just take L2 or L1 error.
     sample_mask = sample_mask & ~torch.isnan(y)
     # delta = torch.abs(y - y_original)
-    delta = (y - y_original)**2
+    delta = (y - y_original)**torch.tensor(2.0, device=device)
     return torch.mean(delta[sample_mask])
 
 def log_lin_image_error(lin_gt, lin_pred):
@@ -277,7 +278,7 @@ def log_lin_image_error(lin_gt, lin_pred):
 def negative_linear_values_penalty(y_linear):
     sample_mask = ~torch.isnan(y_linear)
     negative = torch.minimum(y_linear, torch.zeros_like(y_linear)) # zero out positive values.
-    loss = negative**2
+    loss = negative**torch.tensor(2.0)
     return torch.sum(loss[sample_mask]) / torch.numel(y_linear)
 
 def low_cut_penalty(black_point, model: exp_function_simplified):
@@ -407,25 +408,35 @@ def derive_exp_function_gd_log_lin_images(
     plt.show()
     return model
 
+def get_device():
+    if torch.backends.mps.is_available():
+        return torch.device("cpu")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
 def derive_exp_function_gd(
     images: np.ndarray,
     ref_image_num: int,
     white_point: float,
     black_point: float,
     epochs: int = 20,
-    lr=1e-3,
-    use_scheduler=True,
-    exposures=None,
-    fixed_exposures=False,
-    initial_parameters_fn=None,
-    batch_size=10000,
+    lr: float = 1e-3,
+    use_scheduler: bool = True,
+    exposures: Optional[torch.tensor] = None,
+    fixed_exposures: bool = False,
+    initial_parameters_fn: str= None,
+    batch_size: int = 10000,
+    mid_gray: Optional[float] = None,
 ) -> Tuple[nn.Module, nn.Module]:
     n_images = images.shape[0]
+    device = get_device()
 
     # torch.autograd.set_detect_anomaly(True)
     initial_parameters = INITIAL_GUESS if initial_parameters_fn is None else exp_parameters_simplified.from_csv(initial_parameters_fn)
     model = exp_function_simplified(initial_parameters)
-    gains = gain_table(n_images, exposures, fixed_exposures)
+    gains = gain_table(n_images, exposures.to(device), fixed_exposures).to(device)
     ds = pixel_dataset(images)
     dl = data.DataLoader(ds, shuffle=True, batch_size=batch_size)
 
@@ -434,45 +445,55 @@ def derive_exp_function_gd(
     errors = []
     losses = []
     model.train()
+    model = model.to(device=device)
+    white_point = torch.tensor(white_point, dtype=torch.float32, device=device)
+    black_point = torch.tensor(black_point, dtype=torch.float32, device=device)
+    mid_gray = torch.tensor(mid_gray, dtype=torch.float32, device=device)
+
     for e in range(epochs):
         print(f"Training epoch {e}")
         with tqdm(total=len(ds)) as bar:
             for batch_num, pixels in enumerate(dl):
                 # pixels is of shape (batch_size, n_images, n_channels=3), each l0 row has a fixed h,w pixel coordinate.
                 batch_size = pixels.shape[0]
+                pixels = pixels.to(device)
 
                 optim.zero_grad()
                 lin_images = model(pixels)
                 lin_black = model(black_point)
+                if mid_gray is not None:
+                    lin_gray = model(mid_gray)
 
                 # All lin images matched to image `ref_image_num` is lin_images_matrix[:, :, ref_image_num, :]
                 # lin_images_matrix[:, a, b, :] represents the transformation of image (a) when converted to the exposure of (b).
-                lin_images_matrix = torch.stack([lin_images * gains(torch.arange(0, n_images), neutral_idx) for neutral_idx in torch.arange(0, n_images)], axis=2) # shape (batch_size, n_images, n_images, n_channels)
+                lin_images_matrix = torch.stack([lin_images * gains(torch.arange(0, n_images, device=device), neutral_idx) for neutral_idx in torch.arange(0, n_images, device=device)], axis=2) # shape (batch_size, n_images, n_images, n_channels)
                 y_pred = lin_images_matrix
-                reconstructed_image = model.reverse(y_pred)
+                reconstructed_image = model.reverse(y_pred.type(torch.float32).to(device))
 
                 # Ideally all of y_pred would be equal
-                error = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (reconstructed_image > black_point) & (y_pred > 0.0) & (pixels.unsqueeze(1) < white_point))
-                loss = torch.tensor(0.0)
+                error = reconstruction_error(reconstructed_image, pixels[:, :, :].unsqueeze(1), sample_mask=(reconstructed_image < white_point) & (reconstructed_image > black_point) & (y_pred > torch.tensor(0.0, device=device)) & (pixels.unsqueeze(1) < white_point), device=device)
+                loss = torch.tensor(0.0, device=device)
                 loss += error
                 loss += 0.1 * negative_linear_values_penalty(y_pred)
-                # loss += 0.1 * negative_black_point_penalty(lin_black)
-                # loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
-                loss += 0.1 * low_cut_penalty(torch.tensor(black_point), model)
+                    # loss += 0.1 * negative_black_point_penalty(lin_black)
+                    # loss += 0.1 * middle_gray_penalty(y_pred[:, ref_image_num, ref_image_num, :]) # global exposure adjustment
+                loss += 0.1 * low_cut_penalty(black_point, model)
                 loss += 0.1 * high_intercept_penalty(model)
                 loss += 0.01 * smoothness_penalty(model)
-                # loss = torch.log10(loss)
+                if mid_gray is not None:
+                    loss += 0.1 * torch.pow(lin_gray - torch.tensor(0.18), torch.tensor(2.0))
 
                 loss.backward()
                 optim.step()
 
                 bar.update(batch_size)
-                bar.set_postfix(loss=float(loss), error=float(error), params=model.get_log_parameters(), lr=sched.get_last_lr())
-                errors.append(float(error))
-                losses.append(float(loss))
+                bar.set_postfix(loss=float(loss.cpu()), error=float(error.cpu()), params=model.cpu().get_log_parameters(), lr=sched.get_last_lr())
+                errors.append(float(error.cpu()))
+                losses.append(float(loss.cpu()))
 
             if use_scheduler:
                 sched.step()
+    model.to(device=torch.device("cpu"))
 
     plt.figure()
     plt.xlim(0, len(errors))

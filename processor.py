@@ -87,10 +87,11 @@ def fit_bracketed_exposures(args):
         epochs=args.num_epochs,
         lr=args.learning_rate,
         use_scheduler=args.lrscheduler,
-        exposures=torch.tensor(default_exposure_comp, dtype=float).unsqueeze(1),
+        exposures=torch.tensor(default_exposure_comp, dtype=torch.float32).unsqueeze(1),
         fixed_exposures=args.fixed_exposures,
         initial_parameters_fn=args.initial_parameters,
         batch_size=args.batch_size,
+        mid_gray=args.mid_gray,
     )
 
     print(gains.get_gains(median_image_idx))
@@ -332,6 +333,13 @@ if __name__ == "__main__":
         type=int,
         default=10000,
         help='size of each batch',
+        required=False,
+    )
+    parser.add_argument(
+        '--mid_gray',
+        type=float,
+        default=None,
+        help='0.0-1.0 code value corresponding to 18% mid gray. Ignored unless you specify --dir_path.',
         required=False,
     )
     args = parser.parse_args()
