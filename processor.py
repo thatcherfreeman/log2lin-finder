@@ -339,7 +339,7 @@ if __name__ == "__main__":
         '--mid_gray',
         type=float,
         default=None,
-        help='0.0-1.0 code value corresponding to 18% mid gray. Ignored unless you specify --dir_path.',
+        help='0.0-1.0 code value corresponding to 0.18 mid gray. Ignored unless you specify --dir_path.',
         required=False,
     )
     args = parser.parse_args()
