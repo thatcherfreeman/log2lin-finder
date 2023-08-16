@@ -359,6 +359,8 @@ def derive_exp_function_gd_log_lin_images(
     initial_parameters_fn=None,
     batch_size=10000,
 ) -> nn.Module:
+    device = get_device()
+
     initial_parameters = INITIAL_GUESS if initial_parameters_fn is None else exp_parameters_simplified.from_csv(initial_parameters_fn)
     model = exp_function_simplified(initial_parameters)
     assert (log_image.shape == lin_image.shape) and (len(log_image.shape) == 2)
@@ -370,10 +372,15 @@ def derive_exp_function_gd_log_lin_images(
     errors = []
     losses = []
     model.train()
+    model = model.to(device)
+    black_point = torch.tensor(black_point, dtype=torch.float32, device=device)
+
     for e in range(epochs):
         print(f"Training epoch {e}")
         with tqdm(total=len(ds)) as bar:
             for batch_num, (log_pixels, lin_pixels) in enumerate(dl):
+                log_pixels = log_pixels.to(device)
+                lin_pixels = lin_pixels.to(device)
                 # log_pixels and lin_pixels of shape (batch_size, 3)
                 batch_size = log_pixels.shape[0]
 
@@ -383,12 +390,16 @@ def derive_exp_function_gd_log_lin_images(
                 lin_black = model(black_point)
 
                 # Ideally all of y_pred would be equal
-                error = log_lin_image_error(lin_pixels, lin_pred) + log_lin_image_error(log_pixels, log_pred)
-                loss = torch.log10(error)
-                # loss += negative_linear_values_penalty(y_pred)
+                error = log_lin_image_error(log_pixels, log_pred)
+                # loss = torch.log10(error)
+                loss = torch.tensor(0.0, device=device)
+                loss += error
+                loss += log_lin_image_error(torch.log10(torch.max(lin_pixels, torch.tensor(1e-8))), torch.log10(torch.max(lin_pred, torch.tensor(1e-8))))
+                loss += negative_linear_values_penalty(lin_pred)
                 # loss += 0.1 * negative_black_point_penalty(lin_black)
-                # loss += 0.1 * low_cut_penalty(torch.tensor(black_point), model)
-                loss += 0.1 * smoothness_penalty(model)
+                loss += 0.1 * low_cut_penalty(black_point, model)
+                loss += 0.1 * high_intercept_penalty(model)
+                loss += 0.01 * smoothness_penalty(model)
 
                 loss.backward()
                 optim.step()
