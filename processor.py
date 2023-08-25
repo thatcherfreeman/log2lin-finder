@@ -76,7 +76,7 @@ def fit_bracketed_exposures(args):
     # Identify exposure compensation to apply to each image
     default_exposure_comp = np.array([-1.0 * i for i in range(n)]) + median_image_idx
     if args.exposures is not None:
-        default_exposure_comp = np.array([float(x) for x in args.exposures.split(",")])
+        default_exposure_comp = np.array(sorted([float(x) for x in args.exposures.split(",")], reverse=True))
         median_image_idx = list(default_exposure_comp).index(0)
         assert default_exposure_comp.shape[0] == all_images.shape[0], "Incorrect number of exposures specified with --exposures."
     for exp, fn, b in zip(default_exposure_comp, files, image_brightness):
