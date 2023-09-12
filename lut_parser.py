@@ -15,9 +15,9 @@ class lut_1d_properties:
 
 
 def lookup_1d_lut(x: np.ndarray, lut: lut_1d_properties) -> Tuple[float, float, float]:
-    '''
+    """
     Uses linear interpolation (if needed) and outputs the appropriate 3-channel value.
-    '''
+    """
     assert all(x >= lut.domain_min), f"out of range: {x}"
     assert all(x <= lut.domain_max), f"out of range: {x}"
     idx = (x - lut.domain_min) * (lut.domain_max - lut.domain_min) * (lut.size - 1)
@@ -32,9 +32,11 @@ def lookup_1d_lut(x: np.ndarray, lut: lut_1d_properties) -> Tuple[float, float, 
 def scalar_lookup_1d_lut(x: float, lut: lut_1d_properties, channel: int = 0) -> float:
     assert x >= lut.domain_min[channel], f"out of range: {x}"
     assert x <= lut.domain_max[channel], f"out of range: {x}"
-    idx: float = (x - lut.domain_min[channel]) * \
-        (lut.domain_max[channel] - lut.domain_min[channel]) * \
-        (lut.size - 1)
+    idx: float = (
+        (x - lut.domain_min[channel])
+        * (lut.domain_max[channel] - lut.domain_min[channel])
+        * (lut.size - 1)
+    )
     idx_floor = np.floor(idx).astype(int)
     idx_ceil = np.ceil(idx).astype(int)
     y_floor = lut.contents[idx_floor, channel]
@@ -45,13 +47,13 @@ def scalar_lookup_1d_lut(x: float, lut: lut_1d_properties, channel: int = 0) -> 
 
 def read_1d_lut(fname: str) -> lut_1d_properties:
     title_pat = r'TITLE "(.+)"'
-    lut_3d_size_pat = r'LUT_3D_SIZE (\d+)'
-    lut_1d_size_pat = r'LUT_1D_SIZE (\d+)'
-    domain_min_pat = r'DOMAIN_MIN ([\d\.]+ [\d\.]+ [\d\.]+)'
-    domain_max_pat = r'DOMAIN_MAX ([\d\.]+ [\d\.]+ [\d\.]+)'
-    line_pat = r'^([\d\.]+ [\d\.]+ [\d\.]+)'
+    lut_3d_size_pat = r"LUT_3D_SIZE (\d+)"
+    lut_1d_size_pat = r"LUT_1D_SIZE (\d+)"
+    domain_min_pat = r"DOMAIN_MIN ([\d\.]+ [\d\.]+ [\d\.]+)"
+    domain_max_pat = r"DOMAIN_MAX ([\d\.]+ [\d\.]+ [\d\.]+)"
+    line_pat = r"^([\d\.]+ [\d\.]+ [\d\.]+)"
 
-    with open(fname, 'r') as f:
+    with open(fname, "r") as f:
         contents = []
         properties = lut_1d_properties()
 
@@ -76,8 +78,9 @@ def read_1d_lut(fname: str) -> lut_1d_properties:
                 maxs = [float(x) for x in maxs]
                 properties.domain_max = np.array(maxs)
             line = f.readline()
-        assert properties.size == len(contents), \
-            "LUT size disagrees with content length!"
+        assert properties.size == len(
+            contents
+        ), "LUT size disagrees with content length!"
         properties.contents = np.array(contents)
         assert properties.size > 0, "LUT has zero size!"
     return properties
