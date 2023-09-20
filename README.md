@@ -60,3 +60,7 @@ def linear2log(y):
 ```
 
 There's only a matter of choosing the correct values for parameters $\theta = \{\text{scale}, \text{base}, \text{offset}, \text{slope}, \text{intercept}, \text{cut}\}$.
+
+## Unit Tests
+* Run linter with `mypy *.py`
+* Reformat code with `black .`

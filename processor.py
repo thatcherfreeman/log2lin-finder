@@ -1,30 +1,21 @@
 import os
 
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
-import cv2
+import cv2  # type:ignore
 import numpy as np
 import argparse
 
-from lut_parser import lut_1d_properties, read_1d_lut
+from src.images import open_image
+from src.lut_parser import read_1d_lut
+from src.optimization import derive_exp_function_gd_lut, derive_exp_function_gd_log_lin_images, derive_exp_function_gd
+from src.models import plot_log_curve, MODEL_DICT
+from src.datasets import dataset_from_1d_lut
+
 import torch
-import matplotlib.pyplot as plt
-
-import models
-
-
-def open_image(image_fn: str) -> np.ndarray:
-    os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
-    img: np.ndarray = cv2.imread(image_fn, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-    print(f"Read image data type of {img.dtype}")
-    if img.dtype == np.uint8 or img.dtype == np.uint16:
-        img = img.astype(np.float32) / np.iinfo(img.dtype).max
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return img
+import matplotlib.pyplot as plt  # type:ignore
 
 
 def fit_bracketed_exposures(args):
-    epochs = args.num_epochs
-
     # Read in the folder of tiff files.
     dir_path = args.dir_path
     files = [x for x in sorted(os.listdir(dir_path))]
@@ -104,7 +95,7 @@ def fit_bracketed_exposures(args):
         print(f"{fn} - average brightness: {b} - initial exposure comp: {exp:0.2f}")
 
     # Run GD
-    gains, model = models.derive_exp_function_gd(
+    gains, model = derive_exp_function_gd(
         images=all_images,
         white_point=white_point * 0.95,
         black_point=darkest_value,
@@ -176,7 +167,7 @@ def fit_bracketed_exposures(args):
     plt.legend()
     plt.show()
 
-    models.plot_log_curve(model)
+    plot_log_curve(model)
 
 
 def fit_two_images(args):
@@ -188,7 +179,7 @@ def fit_two_images(args):
     flattened_log_image = np.reshape(log_image, (h * w, c))
     flattened_lin_image = np.reshape(lin_image, (h * w, c))
 
-    model = models.derive_exp_function_gd_log_lin_images(
+    model = derive_exp_function_gd_log_lin_images(
         log_image=flattened_log_image,
         lin_image=flattened_lin_image,
         black_point=np.min(log_image),
@@ -206,7 +197,7 @@ def fit_two_images(args):
         os.path.join(os.path.dirname(args.log_image), "parameters.csv"), "w"
     ) as f:
         f.write(found_parameters.to_csv())
-    models.plot_log_curve(model)
+    plot_log_curve(model)
 
     with torch.no_grad():
         reconstructed_lin_image = model(torch.tensor(log_image)).detach().numpy()
@@ -256,17 +247,16 @@ def fit_two_images(args):
 
 
 def fit_lut_file(args):
-    epochs = args.num_epochs
     fn = args.lut_file
     if args.lut_file == None:
         parser.print_help()
 
     # Train model
     lut = read_1d_lut(fn)
-    model = models.derive_exp_function_gd_lut(
+    model = derive_exp_function_gd_lut(
         lut,
         model_name=args.model_name,
-        epochs=epochs,
+        epochs=args.num_epochs,
         lr=args.learning_rate,
         use_scheduler=args.lrscheduler,
         initial_parameters_fn=args.initial_parameters,
@@ -274,7 +264,7 @@ def fit_lut_file(args):
     print(model.get_log_parameters())
 
     # Display log2lin model's output curve vs original LUT
-    ds = models.dataset_from_1d_lut(lut)
+    ds = dataset_from_1d_lut(lut)
     x, y = ds.tensors
 
     model.eval()
@@ -418,7 +408,7 @@ if __name__ == "__main__":
         default="exp_function",
         const="exp_function",
         nargs="?",
-        choices=list(models.MODEL_DICT.keys()),
+        choices=list(MODEL_DICT.keys()),
         help="Specify the kind of curve you want to fit. Default is: %(default)s",
     )
     args = parser.parse_args()

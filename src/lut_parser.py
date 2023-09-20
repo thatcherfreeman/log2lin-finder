@@ -1,6 +1,5 @@
 import numpy as np
 import re
-import math
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -26,7 +25,7 @@ def lookup_1d_lut(x: np.ndarray, lut: lut_1d_properties) -> Tuple[float, float, 
     y_floor = lut.contents[idx_floor, [0, 1, 2]]
     y_ceil = lut.contents[idx_ceil, [0, 1, 2]]
     y_interp = (idx - idx_floor) * (y_ceil - y_floor) + y_floor
-    return tuple(y_interp)
+    return (y_interp[0], y_interp[1], y_interp[2])
 
 
 def scalar_lookup_1d_lut(x: float, lut: lut_1d_properties, channel: int = 0) -> float:
@@ -59,22 +58,22 @@ def read_1d_lut(fname: str) -> lut_1d_properties:
 
         line = f.readline()
         while line != "":
-            if re.match(line_pat, line):
-                entries = re.match(line_pat, line).group(1).split(" ")
+            if match := re.match(line_pat, line):
+                entries = match.group(1).split(" ")
                 entries = [float(x) for x in entries]
                 contents.append(entries)
-            elif re.match(title_pat, line):
-                properties.title = re.match(title_pat, line).group(1)
-            elif re.match(lut_1d_size_pat, line):
-                properties.size = int(re.match(lut_1d_size_pat, line).group(1))
-            elif re.match(lut_3d_size_pat, line):
+            elif match := re.match(title_pat, line):
+                properties.title = match.group(1)
+            elif match := re.match(lut_1d_size_pat, line):
+                properties.size = int(match.group(1))
+            elif match := re.match(lut_3d_size_pat, line):
                 assert False, "3D LUTs not supported!"
-            elif re.match(domain_min_pat, line):
-                mins = re.match(domain_min_pat, line).group(1).split(" ")
+            elif match := re.match(domain_min_pat, line):
+                mins = match.group(1).split(" ")
                 mins = [float(x) for x in mins]
                 properties.domain_min = np.array(mins)
-            elif re.match(domain_max_pat, line):
-                maxs = re.match(domain_max_pat, line).group(1).split(" ")
+            elif match := re.match(domain_max_pat, line):
+                maxs = match.group(1).split(" ")
                 maxs = [float(x) for x in maxs]
                 properties.domain_max = np.array(maxs)
             line = f.readline()

@@ -11,3 +11,4 @@ canon_imgs
 *.log
 *.toc
 log2lin-finder*
+.mypy_cache
