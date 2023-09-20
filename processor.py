@@ -7,7 +7,11 @@ import argparse
 
 from src.images import open_image
 from src.lut_parser import read_1d_lut
-from src.optimization import derive_exp_function_gd_lut, derive_exp_function_gd_log_lin_images, derive_exp_function_gd
+from src.optimization import (
+    derive_exp_function_gd_lut,
+    derive_exp_function_gd_log_lin_images,
+    derive_exp_function_gd,
+)
 from src.models import plot_log_curve, MODEL_DICT
 from src.datasets import dataset_from_1d_lut
 

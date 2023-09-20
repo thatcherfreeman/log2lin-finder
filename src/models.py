@@ -12,6 +12,7 @@ from torch import nn
 
 @dataclass
 class exp_parameters_simplified:
+    # Based on Arri LogC3
     base: float
     offset: float
     scale: float
@@ -97,15 +98,15 @@ EXP_INITIAL_GUESS = exp_parameters_simplified(
 
 
 class gain_table(nn.Module):
-    def __init__(self, num_images: int, exposures=None, fixed_exposures=False):
+    def __init__(self, num_images: int, device: torch.device, exposures: Optional[torch.Tensor]=None, fixed_exposures: bool=False):
         super(gain_table, self).__init__()
         # Store one gain value per image.
-        self.table = nn.Embedding(num_images, 1)
+        self.table = nn.Embedding(num_images, 1, device=device)
         # let the table learn the different exposures of the images from a neutral starting point
         self.table.weight.data.fill_(0.0)
         self.num_images = torch.tensor(num_images, dtype=torch.int32)
         if exposures is not None:
-            self.table.weight.data = exposures
+            self.table.weight.data = exposures.to(device)
             self.table.requires_grad_(not fixed_exposures)
 
     def forward(self, x, neutral_idx):
@@ -208,6 +209,7 @@ class exp_function_simplified(nn.Module):
 
 @dataclass
 class legacy_exp_function_parameters:
+    # Based on ACESlog
     x_shift: float
     y_shift: float
     scale: float
@@ -393,7 +395,202 @@ class legacy_exp_function(nn.Module):
         )
 
 
-parameters_type = Union[exp_parameters_simplified, legacy_exp_function_parameters]
+@dataclass
+class gamma_function_parameters:
+    # Based on BT1886 EOTF
+    # Strictly speaking, the EOTF function looks more like the log2lin function `exp_curve_to_str` below. This is because the regression works better when the linearization function is simple, but actually the two forms are basically equivalent.
+    gamma: float
+    offset: float
+    scale: float
+    cut: float
+    slope: float
+    intercept: float
+
+    def __str__(self):
+        return f"gamma={self.gamma:0.3f} offset={self.offset:0.3f} scale={self.scale:0.3f} slope={self.slope:0.3f} intercept={self.intercept:0.3f} cut={self.cut:0.3f}"
+
+    def log_curve_to_str(self):
+        # lin to log
+        output = f"""
+const float gamma = {self.gamma};
+const float offset = {self.offset};
+const float scale = {self.scale};
+const float slope = {self.slope};
+const float intercept = {self.intercept};
+const float cut = {self.cut};
+const float y_cut = cut * slope + intercept;
+
+if (x < y_cut) {{
+    return (x - intercept) / slope;
+}} else {{
+    return powf((x - offset) / scale, 1.0 / gamma);
+}}
+"""
+        return output
+
+    def exp_curve_to_str(self):
+        # log to lin
+        output = f"""
+const float gamma = {self.gamma};
+const float offset = {self.offset};
+const float scale = {self.scale};
+const float slope = {self.slope};
+const float intercept = {self.intercept};
+const float cut = {self.cut};
+
+if (x < cut) {{
+    return tmp * slope + intercept;
+}} else {{
+    return scale * powf(x, gamma) + offset;
+}}
+"""
+        return output
+
+    def to_csv(self):
+        output = f"""name,value
+gamma,{self.gamma}
+offset,{self.offset}
+scale,{self.scale}
+slope,{self.slope}
+intercept,{self.intercept}
+cut,{self.cut}
+"""
+        return output
+
+    @staticmethod
+    def from_csv(csv_fn: str) -> "gamma_function_parameters":
+        parsed_dict = {}
+        with open(csv_fn, "r") as f:
+            dict_reader = csv.DictReader(f)
+            for d in dict_reader:
+                parsed_dict[d["name"]] = float(d["value"])
+        return gamma_function_parameters(
+            gamma=parsed_dict["gamma"],
+            offset=parsed_dict["offset"],
+            scale=parsed_dict["scale"],
+            slope=parsed_dict["slope"],
+            intercept=parsed_dict["intercept"],
+            cut=parsed_dict["cut"],
+        )
+
+
+GAMMA_INTIAL_GUESS = gamma_function_parameters(
+    gamma=0.45,
+    offset=-0.099,
+    scale=1.099,
+    cut=0.018,
+    slope=4.5,
+    intercept=0.0,
+)
+
+
+class gamma_function(nn.Module):
+    """
+    Based on the format of the old ACESlog from back in the day.
+    https://github.com/ampas/aces-dev/blob/f65f8f66fbf9165c6317d9536007f2b8ae3899fb/transforms/ctl/acesLog/aces_to_acesLog16i.ctl
+    """
+
+    def __init__(self, parameters: gamma_function_parameters):
+        super(gamma_function, self).__init__()
+        self.gamma = nn.parameter.Parameter(torch.log10(torch.tensor(parameters.gamma)))
+        self.offset = nn.parameter.Parameter(torch.tensor(parameters.offset))
+        self.scale = nn.parameter.Parameter(torch.tensor(parameters.scale))
+        self.slope = nn.parameter.Parameter(torch.tensor(parameters.slope))
+        self.intercept = nn.parameter.Parameter(torch.tensor(parameters.intercept))
+        self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
+
+    def compute_intermediate_values(self):
+        gamma = torch.pow(torch.tensor(10.0), self.gamma)
+        offset = self.offset
+        scale = self.scale
+        intercept = self.intercept
+        cut = self.cut
+        # cut = cut * slope + intercept
+        # Solve for slope
+        slope = (self.cut - self.intercept) / torch.abs(self.cut)
+        return gamma, offset, scale, slope, intercept, cut
+
+    def forward(self, t):
+        # log to lin
+        (
+            gamma,
+            offset,
+            scale,
+            slope,
+            intercept,
+            cut,
+        ) = self.compute_intermediate_values()
+        pow_value = torch.pow(torch.clamp(t, min=0.0), gamma) * scale + offset
+        interp = (t > cut).float()
+        lin_value = t * slope + intercept
+        output = interp * pow_value + (1 - interp) * lin_value
+        return output
+
+    def reverse(self, y):
+        (
+            gamma,
+            offset,
+            scale,
+            slope,
+            intercept,
+            cut,
+        ) = self.compute_intermediate_values()
+        pow_value = torch.pow(torch.clamp((y - offset) / scale, min=0.0), 1.0 / gamma)
+        lin_value = (y - intercept) / slope
+        y_cut = slope * cut + intercept
+        interp = (y > y_cut).float()
+        output = interp * pow_value + (1 - interp) * lin_value
+        output = torch.clamp(output, 0.0, 1.0)
+        return output
+
+    def loss(
+        self,
+        black_point: torch.Tensor,
+        white_point: Optional[torch.Tensor],
+        mid_gray: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        (
+            gamma,
+            offset,
+            scale,
+            slope,
+            intercept,
+            cut,
+        ) = self.compute_intermediate_values()
+        loss = torch.abs(
+            torch.minimum(cut - black_point, torch.zeros_like(black_point))
+        )
+        if mid_gray is not None:
+            loss += torch.pow(
+                self.forward(mid_gray) - torch.tensor(0.18), torch.tensor(2.0)
+            )
+        return loss
+
+    def get_log_parameters(self) -> gamma_function_parameters:
+        (
+            gamma,
+            offset,
+            scale,
+            slope,
+            intercept,
+            cut,
+        ) = self.compute_intermediate_values()
+        return gamma_function_parameters(
+            gamma=float(gamma),
+            offset=float(offset),
+            scale=float(scale),
+            slope=float(slope),
+            intercept=float(intercept),
+            cut=float(cut),
+        )
+
+
+parameters_type = Union[
+    exp_parameters_simplified, legacy_exp_function_parameters, gamma_function_parameters
+]
+model_type = Union[
+    exp_function_simplified, legacy_exp_function, gamma_function
+]
 
 MODEL_DICT = {
     "exp_function": (
@@ -406,10 +603,15 @@ MODEL_DICT = {
         legacy_exp_function_parameters,
         LEGACY_EXP_INTIAL_GUESS,
     ),
+    "gamma": (
+        gamma_function,
+        gamma_function_parameters,
+        GAMMA_INTIAL_GUESS,
+    ),
 }
 
 
-def model_selector(model_name: str, initial_guess_fn: str) -> parameters_type:
+def model_selector(model_name: str, initial_guess_fn: Optional[str]) -> model_type:
     model_class, parameter_class, initial_guess = MODEL_DICT[model_name]
     if initial_guess_fn is not None:
         initial_parameters = parameter_class.from_csv(initial_guess_fn)

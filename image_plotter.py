@@ -2,7 +2,7 @@ import numpy as np
 import os
 
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
-import cv2
+import cv2  # type:ignore
 import argparse
 import matplotlib.pyplot as plt  # type:ignore
 from src.images import open_image, convert_to_hsv

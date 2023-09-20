@@ -12,7 +12,7 @@ from src.loss_functions import (
 import torch
 import torch.nn as nn
 import torch.utils.data as data
-from tqdm import tqdm
+from tqdm import tqdm # type:ignore
 import matplotlib.pyplot as plt  # type:ignore
 import numpy as np
 
@@ -96,7 +96,7 @@ def derive_exp_function_gd_log_lin_images(
     losses = []
     model.train()
     model = model.to(device)
-    black_point = torch.tensor(black_point, dtype=torch.float32, device=device)
+    black_point_t = torch.tensor(black_point, dtype=torch.float32, device=device)
 
     for e in range(epochs):
         print(f"Training epoch {e}")
@@ -120,7 +120,7 @@ def derive_exp_function_gd_log_lin_images(
                     torch.log10(torch.max(lin_pred, torch.tensor(1e-8))),
                 )
                 loss += negative_linear_values_penalty(lin_pred)
-                loss += 0.1 * model.loss(black_point, None, None)
+                loss += 0.1 * model.loss(black_point_t, None, None)
 
                 loss.backward()
                 optim.step()
@@ -162,9 +162,9 @@ def derive_exp_function_gd(
     epochs: int = 20,
     lr: float = 1e-3,
     use_scheduler: bool = True,
-    exposures: Optional[torch.tensor] = None,
+    exposures: Optional[torch.Tensor] = None,
     fixed_exposures: bool = False,
-    initial_parameters_fn: str = None,
+    initial_parameters_fn: Optional[str] = None,
     batch_size: int = 10000,
     mid_gray: Optional[float] = None,
 ) -> Tuple[nn.Module, nn.Module]:
@@ -173,7 +173,7 @@ def derive_exp_function_gd(
 
     # torch.autograd.set_detect_anomaly(True)
     model = model_selector(model_name, initial_parameters_fn)
-    gains = gain_table(n_images, exposures.to(device), fixed_exposures).to(device)
+    gains = gain_table(n_images, device, exposures, fixed_exposures).to(device)
     ds = pixel_dataset(np.clip(images, black_point, white_point))
     dl = data.DataLoader(ds, shuffle=True, batch_size=batch_size)
 
@@ -185,10 +185,13 @@ def derive_exp_function_gd(
     losses = []
     model.train()
     model = model.to(device=device)
-    white_point = torch.tensor(white_point, dtype=torch.float32, device=device)
-    black_point = torch.tensor(black_point, dtype=torch.float32, device=device)
+    white_point_t = torch.tensor(white_point, dtype=torch.float32, device=device)
+    black_point_t = torch.tensor(black_point, dtype=torch.float32, device=device)
     if mid_gray is not None:
-        mid_gray = torch.tensor(mid_gray, dtype=torch.float32, device=device)
+        mid_gray_t: Optional[torch.Tensor] = torch.tensor(mid_gray, dtype=torch.float32, device=device)
+    else:
+        mid_gray_t = None
+
 
     for e in range(epochs):
         print(f"Training epoch {e}")
@@ -209,7 +212,7 @@ def derive_exp_function_gd(
                         * gains(torch.arange(0, n_images, device=device), neutral_idx)
                         for neutral_idx in torch.arange(0, n_images, device=device)
                     ],
-                    axis=2,
+                    dim=2,
                 )  # shape (batch_size, n_images, n_images, n_channels)
                 y_pred = lin_images_matrix
                 reconstructed_image = model.reverse(
@@ -220,16 +223,16 @@ def derive_exp_function_gd(
                 error = reconstruction_error(
                     reconstructed_image,
                     pixels[:, :, :].unsqueeze(1),
-                    sample_mask=(reconstructed_image < white_point)
-                    & (reconstructed_image > black_point)
+                    sample_mask=(reconstructed_image < white_point_t)
+                    & (reconstructed_image > black_point_t)
                     & (y_pred > torch.tensor(0.0, device=device))
-                    & (pixels.unsqueeze(1) < white_point),
+                    & (pixels.unsqueeze(1) < white_point_t),
                     device=device,
                 )
                 loss = torch.tensor(0.0, device=device)
                 loss += error
                 loss += 0.1 * negative_linear_values_penalty(y_pred)
-                loss += 0.1 * model.loss(black_point, white_point, mid_gray)
+                loss += 0.1 * model.loss(black_point_t, white_point_t, mid_gray_t)
 
                 loss.backward()
                 optim.step()
