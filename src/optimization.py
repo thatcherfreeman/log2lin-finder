@@ -12,7 +12,7 @@ from src.loss_functions import (
 import torch
 import torch.nn as nn
 import torch.utils.data as data
-from tqdm import tqdm # type:ignore
+from tqdm import tqdm  # type:ignore
 import matplotlib.pyplot as plt  # type:ignore
 import numpy as np
 
@@ -188,10 +188,11 @@ def derive_exp_function_gd(
     white_point_t = torch.tensor(white_point, dtype=torch.float32, device=device)
     black_point_t = torch.tensor(black_point, dtype=torch.float32, device=device)
     if mid_gray is not None:
-        mid_gray_t: Optional[torch.Tensor] = torch.tensor(mid_gray, dtype=torch.float32, device=device)
+        mid_gray_t: Optional[torch.Tensor] = torch.tensor(
+            mid_gray, dtype=torch.float32, device=device
+        )
     else:
         mid_gray_t = None
-
 
     for e in range(epochs):
         print(f"Training epoch {e}")

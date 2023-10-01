@@ -98,7 +98,13 @@ EXP_INITIAL_GUESS = exp_parameters_simplified(
 
 
 class gain_table(nn.Module):
-    def __init__(self, num_images: int, device: torch.device, exposures: Optional[torch.Tensor]=None, fixed_exposures: bool=False):
+    def __init__(
+        self,
+        num_images: int,
+        device: torch.device,
+        exposures: Optional[torch.Tensor] = None,
+        fixed_exposures: bool = False,
+    ):
         super(gain_table, self).__init__()
         # Store one gain value per image.
         self.table = nn.Embedding(num_images, 1, device=device)
@@ -132,6 +138,7 @@ class gain_table(nn.Module):
         return (
             torch.log2(self.forward(torch.arange(0, self.num_images), neutral_idx))
             .detach()
+            .squeeze()
             .numpy()
         )
 
@@ -439,7 +446,7 @@ const float intercept = {self.intercept};
 const float cut = {self.cut};
 
 if (x < cut) {{
-    return tmp * slope + intercept;
+    return x * slope + intercept;
 }} else {{
     return scale * powf(x, gamma) + offset;
 }}
@@ -505,9 +512,13 @@ class gamma_function(nn.Module):
         scale = self.scale
         intercept = self.intercept
         cut = self.cut
-        # cut = cut * slope + intercept
+        # pow(cut, gamma) * scale + offset = cut * slope + intercept
         # Solve for slope
-        slope = (self.cut - self.intercept) / torch.abs(self.cut)
+        slope = (
+            torch.pow(torch.clamp(cut, min=1e-8), gamma) * scale
+            + offset
+            - self.intercept
+        ) / torch.abs(self.cut)
         return gamma, offset, scale, slope, intercept, cut
 
     def forward(self, t):
@@ -520,7 +531,7 @@ class gamma_function(nn.Module):
             intercept,
             cut,
         ) = self.compute_intermediate_values()
-        pow_value = torch.pow(torch.clamp(t, min=0.0), gamma) * scale + offset
+        pow_value = torch.pow(torch.clamp(t, min=1e-8), gamma) * scale + offset
         interp = (t > cut).float()
         lin_value = t * slope + intercept
         output = interp * pow_value + (1 - interp) * lin_value
@@ -535,7 +546,7 @@ class gamma_function(nn.Module):
             intercept,
             cut,
         ) = self.compute_intermediate_values()
-        pow_value = torch.pow(torch.clamp((y - offset) / scale, min=0.0), 1.0 / gamma)
+        pow_value = torch.pow(torch.clamp((y - offset) / scale, min=1e-8), 1.0 / gamma)
         lin_value = (y - intercept) / slope
         y_cut = slope * cut + intercept
         interp = (y > y_cut).float()
@@ -588,9 +599,7 @@ class gamma_function(nn.Module):
 parameters_type = Union[
     exp_parameters_simplified, legacy_exp_function_parameters, gamma_function_parameters
 ]
-model_type = Union[
-    exp_function_simplified, legacy_exp_function, gamma_function
-]
+model_type = Union[exp_function_simplified, legacy_exp_function, gamma_function]
 
 MODEL_DICT = {
     "exp_function": (

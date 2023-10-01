@@ -114,7 +114,7 @@ def fit_bracketed_exposures(args):
         mid_gray=args.mid_gray,
     )
 
-    print(gains.get_gains(median_image_idx))
+    print("exposures: ", ",".join([str(x) for x in gains.get_gains(median_image_idx)]))
     found_parameters = model.get_log_parameters()
     print(found_parameters)
     print(found_parameters.exp_curve_to_str())
