@@ -1,5 +1,5 @@
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Dict, Optional, Union, Tuple, Type, ClassVar
 
 from src.loss_functions import *
@@ -492,11 +492,6 @@ GAMMA_INTIAL_GUESS = gamma_function_parameters(
 
 
 class gamma_function(nn.Module):
-    """
-    Based on the format of the old ACESlog from back in the day.
-    https://github.com/ampas/aces-dev/blob/f65f8f66fbf9165c6317d9536007f2b8ae3899fb/transforms/ctl/acesLog/aces_to_acesLog16i.ctl
-    """
-
     def __init__(self, parameters: gamma_function_parameters):
         super(gamma_function, self).__init__()
         self.gamma = nn.parameter.Parameter(torch.log10(torch.tensor(parameters.gamma)))
@@ -596,10 +591,139 @@ class gamma_function(nn.Module):
         )
 
 
+@dataclass
+class pure_exp_parameters:
+    # Pure log/power function based on gopro log.
+    base: float
+    offset: float
+    scale: float
+
+    def __str__(self):
+        return (
+            f"base={self.base:0.3f} offset={self.offset:0.3f} scale={self.scale:0.3f}"
+        )
+
+    def log_curve_to_str(self):
+        # lin to log
+        output = f"""
+const float base = {self.base};
+const float offset = {self.offset};
+const float scale = {self.scale};
+
+return _log10f((x / scale) - offset) / _log10f(base);
+"""
+        return output
+
+    def exp_curve_to_str(self):
+        # log to lin
+        output = f"""
+const float base = {self.base};
+const float offset = {self.offset};
+const float scale = {self.scale};
+
+return scale * (_powf(base, x) + offset);
+"""
+        return output
+
+    def to_csv(self):
+        output = f"""name,value
+base,{self.base}
+offset,{self.offset}
+scale,{self.scale}
+"""
+        return output
+
+    @staticmethod
+    def from_csv(csv_fn: str) -> "pure_exp_parameters":
+        parsed_dict = {}
+        with open(csv_fn, "r") as f:
+            dict_reader = csv.DictReader(f)
+            for d in dict_reader:
+                parsed_dict[d["name"]] = float(d["value"])
+        return pure_exp_parameters(
+            base=parsed_dict["base"],
+            offset=parsed_dict["offset"],
+            scale=parsed_dict["scale"],
+        )
+
+
+PURE_EXP_INTIAL_GUESS = pure_exp_parameters(
+    base=100,
+    offset=-1,
+    scale=0.01,
+)
+
+
+class pure_exp_function(nn.Module):
+    def __init__(self, parameters: pure_exp_parameters):
+        super(pure_exp_function, self).__init__()
+        self.base = nn.parameter.Parameter(torch.log10(torch.tensor(parameters.base)))
+        self.offset = nn.parameter.Parameter(torch.tensor(parameters.offset))
+        self.scale = nn.parameter.Parameter(torch.tensor(parameters.scale))
+
+    def compute_intermediate_values(self):
+        base = torch.pow(torch.tensor(10.0), self.base)
+        offset = self.offset
+        scale = self.scale
+        return base, offset, scale
+
+    def forward(self, t):
+        # log to lin
+        (
+            base,
+            offset,
+            scale,
+        ) = self.compute_intermediate_values()
+        pow_value = (torch.pow(base, t) + offset) * scale
+        return pow_value
+
+    def reverse(self, y):
+        (
+            base,
+            offset,
+            scale,
+        ) = self.compute_intermediate_values()
+        log_value = torch.log10(
+            torch.clamp(((y / scale) - offset), 1e-7)
+        ) / torch.log10(base)
+        output = torch.clamp(log_value, 0.0, 1.0)
+        return output
+
+    def loss(
+        self,
+        black_point: torch.Tensor,
+        white_point: Optional[torch.Tensor],
+        mid_gray: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        loss = torch.tensor(0.0)
+        if mid_gray is not None:
+            loss += torch.pow(
+                self.forward(mid_gray) - torch.tensor(0.18), torch.tensor(2.0)
+            )
+        return loss
+
+    def get_log_parameters(self) -> pure_exp_parameters:
+        (
+            base,
+            offset,
+            scale,
+        ) = self.compute_intermediate_values()
+        return pure_exp_parameters(
+            base=float(base),
+            offset=float(offset),
+            scale=float(scale),
+        )
+
+
 parameters_type = Union[
-    exp_parameters_simplified, legacy_exp_function_parameters, gamma_function_parameters
+    exp_parameters_simplified,
+    legacy_exp_function_parameters,
+    gamma_function_parameters,
+    pure_exp_parameters,
 ]
-model_type = Union[exp_function_simplified, legacy_exp_function, gamma_function]
+model_type = Union[
+    exp_function_simplified, legacy_exp_function, gamma_function, pure_exp_function
+]
 
 MODEL_DICT = {
     "exp_function": (
@@ -616,6 +740,11 @@ MODEL_DICT = {
         gamma_function,
         gamma_function_parameters,
         GAMMA_INTIAL_GUESS,
+    ),
+    "pure_exp": (
+        pure_exp_function,
+        pure_exp_parameters,
+        PURE_EXP_INTIAL_GUESS,
     ),
 }
 
@@ -652,13 +781,16 @@ def smoothness_penalty(model: exp_function_simplified):
     return (slope - pow_slope) ** 2
 
 
-def plot_log_curve(model: Union[exp_function_simplified, legacy_exp_function]):
+def plot_log_curve(model: model_type):
     # Plot the log curve as a sanity check
     x_values = np.linspace(start=-8, stop=8, num=4000)
     x_values_lin = 0.18 * (2**x_values)
     with torch.no_grad():
         y_values = model.reverse(torch.tensor(x_values_lin)).detach().numpy()
-        cut = model.get_log_parameters().cut
+        params = model.get_log_parameters()
+        cut = 0
+        if "cut" in asdict(params):
+            cut = asdict(params)["cut"]
     plt.plot(x_values[y_values < cut], y_values[y_values < cut], color="red")
     plt.plot(x_values[y_values >= cut], y_values[y_values >= cut], color="blue")
     plt.axvline(x=0.0)
