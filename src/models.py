@@ -222,10 +222,11 @@ class legacy_exp_function_parameters:
     scale: float
     cut: float
     slope: float
+    slope2: float
     intercept: float
 
     def __str__(self):
-        return f"x_shift={self.x_shift:0.3f} y_shift={self.y_shift:0.3f} scale={self.scale:0.3f} slope={self.slope:0.3f} intercept={self.intercept:0.3f} cut={self.cut:0.3f}"
+        return f"x_shift={self.x_shift:0.3f} y_shift={self.y_shift:0.3f} scale={self.scale:0.3f} slope={self.slope:0.3f} slope2={self.slope2:0.3f} intercept={self.intercept:0.3f} cut={self.cut:0.3f}"
 
     def log_curve_to_str(self):
         output = f"""
@@ -233,13 +234,14 @@ const float x_shift = {self.x_shift};
 const float y_shift = {self.y_shift};
 const float scale = {self.scale};
 const float slope = {self.slope};
+const float slope2 = {self.slope2};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
 float tmp;
-if (x < cut) {{
+if (x / slope2 < cut) {{
     tmp = (x - intercept) / slope;
 }} else {{
-    tmp = x;
+    tmp = x / slope2;
 }}
 return (_log2f(tmp - x_shift) - y_shift) / scale;
 """
@@ -251,6 +253,7 @@ const float x_shift = {self.x_shift};
 const float y_shift = {self.y_shift};
 const float scale = {self.scale};
 const float slope = {self.slope};
+const float slope2 = {self.slope2};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
 
@@ -258,7 +261,7 @@ float tmp = _powf(2.0, x * scale + y_shift) + x_shift;
 if (tmp < cut) {{
     return tmp * slope + intercept;
 }} else {{
-    return tmp;
+    return tmp * slope2;
 }}
 """
         return output
@@ -269,6 +272,7 @@ x_shift,{self.x_shift}
 y_shift,{self.y_shift}
 scale,{self.scale}
 slope,{self.slope}
+slope2,{self.slope2}
 intercept,{self.intercept}
 cut,{self.cut}
 """
@@ -286,6 +290,7 @@ cut,{self.cut}
             y_shift=parsed_dict["y_shift"],
             scale=parsed_dict["scale"],
             slope=parsed_dict["slope"],
+            slope2=parsed_dict["slope2"],
             intercept=parsed_dict["intercept"],
             cut=parsed_dict["cut"],
         )
@@ -297,6 +302,7 @@ LEGACY_EXP_INTIAL_GUESS = legacy_exp_function_parameters(
     scale=6.0,
     cut=0.18,
     slope=2.1,
+    slope2=1.0,
     intercept=-0.5,
 )
 
@@ -313,6 +319,7 @@ class legacy_exp_function(nn.Module):
         self.y_shift = nn.parameter.Parameter(torch.tensor(parameters.y_shift))
         self.scale = nn.parameter.Parameter(torch.tensor(parameters.scale))
         self.slope = nn.parameter.Parameter(torch.tensor(parameters.slope))
+        self.slope2 = nn.parameter.Parameter(torch.tensor(parameters.slope2))
         self.intercept = nn.parameter.Parameter(torch.tensor(parameters.intercept))
         self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
 
@@ -322,10 +329,11 @@ class legacy_exp_function(nn.Module):
         scale = self.scale
         intercept = self.intercept
         cut = self.cut
-        # cut = cut * slope + intercept
+        slope2 = self.slope2
+        # cut * slope2 = cut * slope + intercept
         # Solve for slope
-        slope = (self.cut - self.intercept) / torch.abs(self.cut)
-        return x_shift, y_shift, scale, slope, intercept, cut
+        slope = torch.abs((self.cut * self.slope2 - self.intercept) / torch.abs(self.cut))
+        return x_shift, y_shift, scale, slope, slope2, intercept, cut
 
     def forward(self, t):
         # log to lin
@@ -334,13 +342,14 @@ class legacy_exp_function(nn.Module):
             y_shift,
             scale,
             slope,
+            slope2,
             intercept,
             cut,
         ) = self.compute_intermediate_values()
         pow_value = torch.pow(2.0, (t * scale + y_shift)) + x_shift
         interp = (pow_value > cut).float()
         lin_value = pow_value * slope + intercept
-        output = interp * pow_value + (1 - interp) * lin_value
+        output = interp * pow_value * slope2 + (1 - interp) * lin_value
         return output
 
     def reverse(self, y):
@@ -349,12 +358,13 @@ class legacy_exp_function(nn.Module):
             y_shift,
             scale,
             slope,
+            slope2,
             intercept,
             cut,
         ) = self.compute_intermediate_values()
         lin_value = (y - intercept) / slope
-        interp = (y > cut).float()
-        tmp = interp * y + (1.0 - interp) * lin_value
+        interp = (y / slope2 > cut).float()
+        tmp = interp * y / slope2 + (1.0 - interp) * lin_value
         output = (torch.log2(torch.clamp(tmp - x_shift, 1e-7)) - y_shift) / scale
         output = torch.clamp(output, 0.0, 1.0)
         return output
@@ -370,6 +380,7 @@ class legacy_exp_function(nn.Module):
             y_shift,
             scale,
             slope,
+            slope2,
             intercept,
             cut,
         ) = self.compute_intermediate_values()
@@ -389,6 +400,7 @@ class legacy_exp_function(nn.Module):
             y_shift,
             scale,
             slope,
+            slope2,
             intercept,
             cut,
         ) = self.compute_intermediate_values()
@@ -397,6 +409,7 @@ class legacy_exp_function(nn.Module):
             y_shift=float(y_shift),
             scale=float(scale),
             slope=float(slope),
+            slope2=float(slope2),
             intercept=float(intercept),
             cut=float(cut),
         )
