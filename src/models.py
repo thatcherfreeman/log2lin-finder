@@ -328,11 +328,13 @@ class legacy_exp_function(nn.Module):
         y_shift = self.y_shift
         scale = self.scale
         intercept = self.intercept
-        cut = self.cut
+        # cut = self.cut
         slope2 = self.slope2
         # cut * slope2 = cut * slope + intercept
         # Solve for slope
-        slope = torch.abs((self.cut * self.slope2 - self.intercept) / torch.abs(self.cut))
+        slope = self.slope
+        # slope = torch.abs((self.cut * self.slope2 - self.intercept) / torch.abs(self.cut))
+        cut = intercept / torch.abs(slope2 - slope)
         return x_shift, y_shift, scale, slope, slope2, intercept, cut
 
     def forward(self, t):
