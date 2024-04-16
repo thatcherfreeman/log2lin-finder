@@ -112,6 +112,7 @@ def fit_bracketed_exposures(args):
         initial_parameters_fn=args.initial_parameters,
         batch_size=args.batch_size,
         mid_gray=args.mid_gray,
+        restart_optimizer=args.restart_optimizer,
     )
 
     print("exposures: ", ",".join([str(x) for x in gains.get_gains(median_image_idx)]))
@@ -414,6 +415,12 @@ if __name__ == "__main__":
         nargs="?",
         choices=list(MODEL_DICT.keys()),
         help="Specify the kind of curve you want to fit. Default is: %(default)s",
+    )
+    parser.add_argument(
+        "--restart_optimizer",
+        action="store_true",
+        help="Restarts the optimizer every 3 epochs",
+        required=False,
     )
     args = parser.parse_args()
     print(args)
