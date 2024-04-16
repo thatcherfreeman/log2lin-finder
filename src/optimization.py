@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+from collections import defaultdict
 
 from src.models import model_selector, gain_table
 from src.datasets import dataset_from_1d_lut, pixel_dataset
@@ -167,6 +168,7 @@ def derive_exp_function_gd(
     initial_parameters_fn: Optional[str] = None,
     batch_size: int = 10000,
     mid_gray: Optional[float] = None,
+    restart_optimizer: bool = False,
 ) -> Tuple[nn.Module, nn.Module]:
     n_images = images.shape[0]
     device = get_device()
@@ -195,6 +197,11 @@ def derive_exp_function_gd(
         mid_gray_t = None
 
     for e in range(epochs):
+        if e % 3 == 0 and restart_optimizer:
+            print("resetting optimizer state")
+            optim = torch.optim.Adam(
+                list(model.parameters()) + list(gains.parameters()), lr=lr
+            )
         print(f"Training epoch {e}")
         with tqdm(total=len(ds)) as bar:
             for batch_num, pixels in enumerate(dl):
