@@ -258,11 +258,13 @@ const float intercept = {self.intercept};
 const float cut = {self.cut};
 
 float tmp = _powf(2.0, x * scale + y_shift) + x_shift;
+float out;
 if (tmp < cut) {{
-    return tmp * slope + intercept;
+    out = tmp * slope + intercept;
 }} else {{
-    return tmp * slope2;
+    out = tmp * slope2;
 }}
+return out;
 """
         return output
 
