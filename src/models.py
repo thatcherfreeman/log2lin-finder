@@ -51,11 +51,13 @@ const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
 
+float out;
 if (x < cut) {{
-    return slope * x + intercept;
+    out = slope * x + intercept;
 }} else {{
-    return _powf(base, x) * scale + offset;
+    out = _powf(base, x) * scale + offset;
 }}
+return out;
 """
         return output
 
