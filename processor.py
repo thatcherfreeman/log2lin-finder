@@ -358,9 +358,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--learning_rate",
-        default=1e-3,
+        default=1e-2,
         type=float,
-        help="Specify the gradient descent learning rate.",
+        help="Specify the gradient descent learning rate. Usually a range of 1e-2 to 1e-3 is the right thing.",
         required=False,
     )
     parser.add_argument(
