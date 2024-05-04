@@ -167,7 +167,6 @@ def derive_exp_function_gd(
     fixed_exposures: bool = False,
     initial_parameters_fn: Optional[str] = None,
     batch_size: int = 10000,
-    mid_gray: Optional[float] = None,
     restart_optimizer: bool = False,
 ) -> Tuple[nn.Module, nn.Module]:
     n_images = images.shape[0]
@@ -189,12 +188,6 @@ def derive_exp_function_gd(
     model = model.to(device=device)
     white_point_t = torch.tensor(white_point, dtype=torch.float32, device=device)
     black_point_t = torch.tensor(black_point, dtype=torch.float32, device=device)
-    if mid_gray is not None:
-        mid_gray_t: Optional[torch.Tensor] = torch.tensor(
-            mid_gray, dtype=torch.float32, device=device
-        )
-    else:
-        mid_gray_t = None
 
     for e in range(epochs):
         if e % 3 == 0 and restart_optimizer:
@@ -240,7 +233,7 @@ def derive_exp_function_gd(
                 loss = torch.tensor(0.0, device=device)
                 loss += error
                 loss += 0.1 * negative_linear_values_penalty(y_pred)
-                loss += 0.1 * model.loss(black_point_t, white_point_t, mid_gray_t)
+                loss += 0.1 * model.loss(black_point_t, white_point_t)
 
                 loss.backward()
                 optim.step()

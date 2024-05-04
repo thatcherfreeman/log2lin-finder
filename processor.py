@@ -111,12 +111,11 @@ def fit_bracketed_exposures(args):
         fixed_exposures=args.fixed_exposures,
         initial_parameters_fn=args.initial_parameters,
         batch_size=args.batch_size,
-        mid_gray=args.mid_gray,
         restart_optimizer=args.restart_optimizer,
     )
 
     print("exposures: ", ",".join([str(x) for x in gains.get_gains(median_image_idx)]))
-    found_parameters = model.get_log_parameters()
+    found_parameters = model.get_log_parameters(target_mid_gray=args.mid_gray)
     print(found_parameters)
     print(found_parameters.exp_curve_to_str())
     with open(os.path.join(dir_path, "parameters.csv"), "w") as f:
@@ -135,21 +134,26 @@ def fit_bracketed_exposures(args):
         if args.output_1d_lut:
             lut_properties = lut_1d_properties()
             lut_properties.size = 4096
-            lut_properties.contents = np.repeat(
-                np.reshape(
-                    model(torch.tensor(np.linspace(0, 1, lut_properties.size)))
-                    .detach()
-                    .numpy(),
-                    (lut_properties.size, 1),
-                ),
-                3,
-                1,
+            lut_properties.contents = (
+                np.repeat(
+                    np.reshape(
+                        model(torch.tensor(np.linspace(0, 1, lut_properties.size)))
+                        .detach()
+                        .numpy(),
+                        (lut_properties.size, 1),
+                    ),
+                    3,
+                    1,
+                )
+                * found_parameters.mid_gray_scaling
             )
             write_1d_lut(args.output_1d_lut, lut_properties)
         for i, (image, fn) in enumerate(zip(input_images, files)):
             gain = gains(torch.tensor(i), median_image_idx)
-            lin_image = model(torch.tensor(image)) * gain
-            log_image = model.reverse(lin_image)
+            lin_image = (
+                model(torch.tensor(image)) * gain * found_parameters.mid_gray_scaling
+            )
+            log_image = model.reverse(lin_image / found_parameters.mid_gray_scaling)
             # gamma_image = (32*lin_image)**0.45
             output_lin_images.append(lin_image.detach().numpy())
             output_images.append(log_image.detach().numpy())
@@ -186,7 +190,7 @@ def fit_bracketed_exposures(args):
     plt.legend()
     plt.show()
 
-    plot_log_curve(model)
+    plot_log_curve(model, args.mid_gray)
 
 
 def fit_two_images(args):
@@ -209,14 +213,14 @@ def fit_two_images(args):
         initial_parameters_fn=args.initial_parameters,
         batch_size=args.batch_size,
     )
-    found_parameters = model.get_log_parameters()
+    found_parameters = model.get_log_parameters(target_mid_gray = args.mid_gray)
     print(found_parameters)
     print(found_parameters.exp_curve_to_str())
     with open(
         os.path.join(os.path.dirname(args.log_image), "parameters.csv"), "w"
     ) as f:
         f.write(found_parameters.to_csv())
-    plot_log_curve(model)
+    plot_log_curve(model, args.mid_gray)
 
     with torch.no_grad():
         reconstructed_lin_image = model(torch.tensor(log_image)).detach().numpy()
@@ -232,15 +236,18 @@ def fit_two_images(args):
         if args.output_1d_lut:
             lut_properties = lut_1d_properties()
             lut_properties.size = 4096
-            lut_properties.contents = np.repeat(
-                np.reshape(
-                    model(torch.tensor(np.linspace(0, 1, lut_properties.size)))
-                    .detach()
-                    .numpy(),
-                    (lut_properties.size, 1),
-                ),
-                3,
-                1,
+            lut_properties.contents = (
+                np.repeat(
+                    np.reshape(
+                        model(torch.tensor(np.linspace(0, 1, lut_properties.size)))
+                        .detach()
+                        .numpy(),
+                        (lut_properties.size, 1),
+                    ),
+                    3,
+                    1,
+                )
+                * found_parameters.mid_gray_scaling
             )
             write_1d_lut(args.output_1d_lut, lut_properties)
 

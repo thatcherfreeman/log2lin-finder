@@ -19,6 +19,7 @@ class exp_parameters_simplified:
     slope: float
     intercept: float
     cut: float
+    mid_gray_scaling: float = 1.0
 
     def __str__(self):
         return f"base={self.base:0.3f} offset={self.offset:0.3f} scale={self.scale:0.3f} slope={self.slope:0.3f} intercept={self.intercept:0.3f} cut={self.cut:0.3f}"
@@ -31,8 +32,9 @@ const float scale = {self.scale};
 const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
-
+y /= mid_gray_scaling;
 const float y_cut = slope * cut + intercept;
 if (y < y_cut) {{
     return (y - intercept) / slope;
@@ -50,6 +52,7 @@ const float scale = {self.scale};
 const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
 float out;
 if (x < cut) {{
@@ -57,6 +60,7 @@ if (x < cut) {{
 }} else {{
     out = _powf(base, x) * scale + offset;
 }}
+out *= mid_gray_scaling;
 return out;
 """
         return output
@@ -69,6 +73,7 @@ scale,{self.scale}
 slope,{self.slope}
 intercept,{self.intercept}
 cut,{self.cut}
+mid_gray_scaling,{self.mid_gray_scaling}
 """
         return output
 
@@ -86,6 +91,7 @@ cut,{self.cut}
             slope=parsed_dict["slope"],
             intercept=parsed_dict["intercept"],
             cut=parsed_dict["cut"],
+            mid_gray_scaling=parsed_dict.get("mid_gray_scaling", 1.0),
         )
 
 
@@ -96,6 +102,7 @@ EXP_INITIAL_GUESS = exp_parameters_simplified(
     slope=0.005,
     intercept=0.00343,
     cut=0.1506,
+    mid_gray_scaling=1.0,
 )
 
 
@@ -189,7 +196,13 @@ class exp_function_simplified(nn.Module):
         output = torch.clamp(output, 0.0, 1.0)
         return output
 
-    def get_log_parameters(self) -> exp_parameters_simplified:
+    def get_log_parameters(
+        self, target_mid_gray: Optional[float] = None
+    ) -> exp_parameters_simplified:
+        mid_gray_scaling = 1.0
+        if target_mid_gray is not None:
+            output_mid_gray = self.forward(target_mid_gray)
+            mid_gray_scaling = 0.18 / output_mid_gray
         base, offset, scale, slope, intercept, cut = self.compute_intermediate_values()
         return exp_parameters_simplified(
             base=float(base),
@@ -198,21 +211,17 @@ class exp_function_simplified(nn.Module):
             slope=float(slope),
             intercept=float(intercept),
             cut=float(cut),
+            mid_gray_scaling=float(mid_gray_scaling),
         )
 
     def loss(
         self,
         black_point: torch.Tensor,
         white_point: Optional[torch.Tensor],
-        mid_gray: Optional[torch.Tensor],
     ) -> torch.Tensor:
         loss = low_cut_penalty(black_point, self)
         loss += high_intercept_penalty(self)
         # loss += 0.1 * smoothness_penalty(model)
-        if mid_gray is not None:
-            loss += torch.pow(
-                self.forward(mid_gray) - torch.tensor(0.18), torch.tensor(2.0)
-            )
         return loss
 
 
@@ -226,6 +235,7 @@ class legacy_exp_function_parameters:
     slope: float
     slope2: float
     intercept: float
+    mid_gray_scaling: float = 1.0
 
     def __str__(self):
         return f"x_shift={self.x_shift:0.3f} y_shift={self.y_shift:0.3f} scale={self.scale:0.3f} slope={self.slope:0.3f} slope2={self.slope2:0.3f} intercept={self.intercept:0.3f} cut={self.cut:0.3f}"
@@ -239,6 +249,9 @@ const float slope = {self.slope};
 const float slope2 = {self.slope2};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
+const float mid_gray_scaling = {self.mid_gray_scaling};
+x /= mid_gray_scaling;
+
 float tmp;
 if (x / slope2 < cut) {{
     tmp = (x - intercept) / slope;
@@ -258,6 +271,7 @@ const float slope = {self.slope};
 const float slope2 = {self.slope2};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
 float tmp = _powf(2.0, x * scale + y_shift) + x_shift;
 float out;
@@ -266,6 +280,7 @@ if (tmp < cut) {{
 }} else {{
     out = tmp * slope2;
 }}
+out *= mid_gray_scaling;
 return out;
 """
         return output
@@ -279,6 +294,7 @@ slope,{self.slope}
 slope2,{self.slope2}
 intercept,{self.intercept}
 cut,{self.cut}
+mid_gray_scaling,{self.mid_gray_scaling}
 """
         return output
 
@@ -297,6 +313,7 @@ cut,{self.cut}
             slope2=parsed_dict["slope2"],
             intercept=parsed_dict["intercept"],
             cut=parsed_dict["cut"],
+            mid_gray_scaling=parsed_dict.get("mid_gray_scaling", 1.0),
         )
 
 
@@ -308,6 +325,7 @@ LEGACY_EXP_INTIAL_GUESS = legacy_exp_function_parameters(
     slope=2.1,
     slope2=1.0,
     intercept=-0.5,
+    mid_gray_scaling=1.0,
 )
 
 
@@ -379,7 +397,6 @@ class legacy_exp_function(nn.Module):
         self,
         black_point: torch.Tensor,
         white_point: Optional[torch.Tensor],
-        mid_gray: Optional[torch.Tensor],
     ) -> torch.Tensor:
         (
             x_shift,
@@ -394,13 +411,15 @@ class legacy_exp_function(nn.Module):
             torch.minimum(cut - black_point, torch.zeros_like(black_point))
         )
         # loss += torch.maximum(intercept, torch.zeros_like(intercept))**2
-        if mid_gray is not None:
-            loss += torch.pow(
-                self.forward(mid_gray) - torch.tensor(0.18), torch.tensor(2.0)
-            )
         return loss
 
-    def get_log_parameters(self) -> legacy_exp_function_parameters:
+    def get_log_parameters(
+        self, target_mid_gray: Optional[float] = None
+    ) -> legacy_exp_function_parameters:
+        mid_gray_scaling = 1.0
+        if target_mid_gray is not None:
+            output_mid_gray = self.forward(target_mid_gray)
+            mid_gray_scaling = 0.18 / output_mid_gray
         (
             x_shift,
             y_shift,
@@ -418,6 +437,7 @@ class legacy_exp_function(nn.Module):
             slope2=float(slope2),
             intercept=float(intercept),
             cut=float(cut),
+            mid_gray_scaling=float(mid_gray_scaling),
         )
 
 
@@ -431,6 +451,7 @@ class gamma_function_parameters:
     cut: float
     slope: float
     intercept: float
+    mid_gray_scaling: float = 1.0
 
     def __str__(self):
         return f"gamma={self.gamma:0.3f} offset={self.offset:0.3f} scale={self.scale:0.3f} slope={self.slope:0.3f} intercept={self.intercept:0.3f} cut={self.cut:0.3f}"
@@ -445,7 +466,9 @@ const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
 const float y_cut = cut * slope + intercept;
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
+x /= mid_gray_scaling;
 if (x < y_cut) {{
     return (x - intercept) / slope;
 }} else {{
@@ -463,12 +486,16 @@ const float scale = {self.scale};
 const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
+float out;
 if (x < cut) {{
-    return x * slope + intercept;
+    out = x * slope + intercept;
 }} else {{
-    return scale * powf(x, gamma) + offset;
+    out = scale * powf(x, gamma) + offset;
 }}
+out *= mid_gray_scaling;
+return out;
 """
         return output
 
@@ -480,6 +507,7 @@ scale,{self.scale}
 slope,{self.slope}
 intercept,{self.intercept}
 cut,{self.cut}
+mid_gray_scaling,{self.mid_gray_scaling}
 """
         return output
 
@@ -497,6 +525,7 @@ cut,{self.cut}
             slope=parsed_dict["slope"],
             intercept=parsed_dict["intercept"],
             cut=parsed_dict["cut"],
+            mid_gray_scaling=parsed_dict.get("mid_gray_scaling", 1.0),
         )
 
 
@@ -507,6 +536,7 @@ GAMMA_INTIAL_GUESS = gamma_function_parameters(
     cut=0.018,
     slope=4.5,
     intercept=0.0,
+    mid_gray_scaling=1.0,
 )
 
 
@@ -572,7 +602,6 @@ class gamma_function(nn.Module):
         self,
         black_point: torch.Tensor,
         white_point: Optional[torch.Tensor],
-        mid_gray: Optional[torch.Tensor],
     ) -> torch.Tensor:
         (
             gamma,
@@ -585,13 +614,15 @@ class gamma_function(nn.Module):
         loss = torch.abs(
             torch.minimum(cut - black_point, torch.zeros_like(black_point))
         )
-        if mid_gray is not None:
-            loss += torch.pow(
-                self.forward(mid_gray) - torch.tensor(0.18), torch.tensor(2.0)
-            )
         return loss
 
-    def get_log_parameters(self) -> gamma_function_parameters:
+    def get_log_parameters(
+        self, target_mid_gray: Optional[float] = None
+    ) -> gamma_function_parameters:
+        mid_gray_scaling = 1.0
+        if target_mid_gray is not None:
+            output_mid_gray = self.forward(target_mid_gray)
+            mid_gray_scaling = 0.18 / output_mid_gray
         (
             gamma,
             offset,
@@ -607,6 +638,7 @@ class gamma_function(nn.Module):
             slope=float(slope),
             intercept=float(intercept),
             cut=float(cut),
+            mid_gray_scaling=float(mid_gray_scaling),
         )
 
 
@@ -616,6 +648,7 @@ class pure_exp_parameters:
     base: float
     offset: float
     scale: float
+    mid_gray_scaling: float = 1.0
 
     def __str__(self):
         return (
@@ -628,6 +661,8 @@ class pure_exp_parameters:
 const float base = {self.base};
 const float offset = {self.offset};
 const float scale = {self.scale};
+const float mid_gray_scaling = {self.mid_gray_scaling};
+x /= mid_gray_scaling;
 
 return _log10f((x / scale) - offset) / _log10f(base);
 """
@@ -639,8 +674,11 @@ return _log10f((x / scale) - offset) / _log10f(base);
 const float base = {self.base};
 const float offset = {self.offset};
 const float scale = {self.scale};
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
-return scale * (_powf(base, x) + offset);
+float out = scale * (_powf(base, x) + offset);
+out *= mid_gray_scaling;
+return out;
 """
         return output
 
@@ -649,6 +687,7 @@ return scale * (_powf(base, x) + offset);
 base,{self.base}
 offset,{self.offset}
 scale,{self.scale}
+mid_gray_scaling,{self.mid_gray_scaling}
 """
         return output
 
@@ -663,6 +702,7 @@ scale,{self.scale}
             base=parsed_dict["base"],
             offset=parsed_dict["offset"],
             scale=parsed_dict["scale"],
+            mid_gray_scaling=parsed_dict.get("mid_gray_scaling", 1.0),
         )
 
 
@@ -670,6 +710,7 @@ PURE_EXP_INTIAL_GUESS = pure_exp_parameters(
     base=100,
     offset=-1,
     scale=0.01,
+    mid_gray_scaling=1.0,
 )
 
 
@@ -712,16 +753,17 @@ class pure_exp_function(nn.Module):
         self,
         black_point: torch.Tensor,
         white_point: Optional[torch.Tensor],
-        mid_gray: Optional[torch.Tensor],
     ) -> torch.Tensor:
         loss = torch.tensor(0.0)
-        if mid_gray is not None:
-            loss += torch.pow(
-                self.forward(mid_gray) - torch.tensor(0.18), torch.tensor(2.0)
-            )
         return loss
 
-    def get_log_parameters(self) -> pure_exp_parameters:
+    def get_log_parameters(
+        self, target_mid_gray: Optional[float] = None
+    ) -> pure_exp_parameters:
+        mid_gray_scaling = 1.0
+        if target_mid_gray is not None:
+            output_mid_gray = self.forward(target_mid_gray)
+            mid_gray_scaling = 0.18 / output_mid_gray
         (
             base,
             offset,
@@ -731,6 +773,7 @@ class pure_exp_function(nn.Module):
             base=float(base),
             offset=float(offset),
             scale=float(scale),
+            mid_gray_scaling=float(mid_gray_scaling),
         )
 
 
@@ -800,13 +843,13 @@ def smoothness_penalty(model: exp_function_simplified):
     return (slope - pow_slope) ** 2
 
 
-def plot_log_curve(model: model_type):
+def plot_log_curve(model: model_type, mid_gray: Optional[float] = None):
     # Plot the log curve as a sanity check
     x_values = np.linspace(start=-8, stop=8, num=4000)
     x_values_lin = 0.18 * (2**x_values)
     with torch.no_grad():
         y_values = model.reverse(torch.tensor(x_values_lin)).detach().numpy()
-        params = model.get_log_parameters()
+        params = model.get_log_parameters(mid_gray)
         cut = 0
         if "cut" in asdict(params):
             cut = asdict(params)["cut"]
