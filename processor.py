@@ -6,7 +6,7 @@ import numpy as np
 import argparse
 
 from src.images import open_image
-from src.lut_parser import read_1d_lut
+from src.lut_parser import read_1d_lut, write_1d_lut, lut_1d_properties
 from src.optimization import (
     derive_exp_function_gd_lut,
     derive_exp_function_gd_log_lin_images,
@@ -132,6 +132,20 @@ def fit_bracketed_exposures(args):
     output_lin_images = []
     titles = []
     with torch.no_grad():
+        if args.output_1d_lut:
+            lut_properties = lut_1d_properties()
+            lut_properties.size = 4096
+            lut_properties.contents = np.repeat(
+                np.reshape(
+                    model(torch.tensor(np.linspace(0, 1, lut_properties.size)))
+                    .detach()
+                    .numpy(),
+                    (lut_properties.size, 1),
+                ),
+                3,
+                1,
+            )
+            write_1d_lut(args.output_1d_lut, lut_properties)
         for i, (image, fn) in enumerate(zip(input_images, files)):
             gain = gains(torch.tensor(i), median_image_idx)
             lin_image = model(torch.tensor(image)) * gain
@@ -215,6 +229,20 @@ def fit_two_images(args):
         flattened_reconstructed_log_image = np.reshape(
             reconstructed_log_image, (h * w, c)
         )
+        if args.output_1d_lut:
+            lut_properties = lut_1d_properties()
+            lut_properties.size = 4096
+            lut_properties.contents = np.repeat(
+                np.reshape(
+                    model(torch.tensor(np.linspace(0, 1, lut_properties.size)))
+                    .detach()
+                    .numpy(),
+                    (lut_properties.size, 1),
+                ),
+                3,
+                1,
+            )
+            write_1d_lut(args.output_1d_lut, lut_properties)
 
     num_samples = 10000
     sampled_coords = np.random.choice(h * w, num_samples)
@@ -421,6 +449,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Restarts the optimizer every 3 epochs",
         required=False,
+    )
+    parser.add_argument(
+        "--output_1d_lut",
+        type=str,
+        help="Specify filename of 1d lut to output to, if desired.",
     )
     args = parser.parse_args()
     print(args)

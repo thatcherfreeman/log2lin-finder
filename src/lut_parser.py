@@ -85,7 +85,19 @@ def read_1d_lut(fname: str) -> lut_1d_properties:
     return properties
 
 
-if __name__ == "__main__":
-    fname = "zlog2_to_linear_4096.cube"
-    lut = read_1d_lut(fname)
-    print(lookup_1d_lut(np.array([0.3, 0.5, 0.3]), lut))
+def write_1d_lut(fname: str, values: lut_1d_properties):
+    print(f"Writing 1D LUT to {fname}")
+    with open(fname, "w", encoding="utf-8") as f:
+        lines = []
+        if values.title:
+            lines.append(f"TITLE {values.title}\n")
+        lines.append(f"LUT_1D_SIZE {values.size}\n")
+        lines.append(
+            f"DOMAIN_MIN {values.domain_min[0]} {values.domain_min[1]} {values.domain_min[2]}\n"
+        )
+        lines.append(
+            f"DOMAIN_MIN {values.domain_max[0]} {values.domain_max[1]} {values.domain_max[2]}\n"
+        )
+        for row in values.contents:
+            lines.append(f"{row[0]} {row[1]} {row[2]}\n")
+        f.writelines(lines)
