@@ -1,16 +1,24 @@
 import numpy as np
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple
 
 
 @dataclass
 class lut_1d_properties:
     size: int = 0
-    contents: np.ndarray = np.zeros((size, 3))
+    contents: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
     title: str = ""
-    domain_min: np.ndarray = np.zeros(3)
-    domain_max: np.ndarray = np.ones(3)
+    domain_min: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    domain_max: np.ndarray = field(default_factory=lambda: np.ones(3))
+
+    def get_x_axis(self) -> np.ndarray:
+        return (
+            np.arange(0, self.size)
+            * (self.domain_max[0] - self.domain_min[0])
+            / (self.size - 1)
+            + self.domain_min[0]
+        )
 
 
 def lookup_1d_lut(x: np.ndarray, lut: lut_1d_properties) -> Tuple[float, float, float]:

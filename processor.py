@@ -9,6 +9,7 @@ from src.images import open_image
 from src.lut_parser import read_1d_lut, write_1d_lut, lut_1d_properties
 from src.optimization import (
     derive_exp_function_gd_lut,
+    derive_exp_function_gd_lut_v2,
     derive_exp_function_gd_log_lin_images,
     derive_exp_function_gd,
 )
@@ -213,7 +214,7 @@ def fit_two_images(args):
         initial_parameters_fn=args.initial_parameters,
         batch_size=args.batch_size,
     )
-    found_parameters = model.get_log_parameters(target_mid_gray = args.mid_gray)
+    found_parameters = model.get_log_parameters(target_mid_gray=args.mid_gray)
     print(found_parameters)
     print(found_parameters.exp_curve_to_str())
     with open(
@@ -301,7 +302,9 @@ def fit_lut_file(args):
         use_scheduler=args.lrscheduler,
         initial_parameters_fn=args.initial_parameters,
     )
-    print(model.get_log_parameters())
+    parameters = model.get_log_parameters()
+    print(parameters)
+    print(parameters.exp_curve_to_str())
 
     # Display log2lin model's output curve vs original LUT
     ds = dataset_from_1d_lut(lut)
@@ -309,6 +312,7 @@ def fit_lut_file(args):
 
     model.eval()
     y_pred = model(x).detach().numpy()
+    print(y_pred)
     model.train()
     y_pred_interp = model(x).detach().numpy()
     x_np = x.numpy()

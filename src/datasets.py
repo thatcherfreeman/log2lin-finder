@@ -5,12 +5,7 @@ from torch.utils import data
 
 
 def dataset_from_1d_lut(lut: lut_1d_properties) -> data.Dataset:
-    x = (
-        torch.arange(0, lut.size, dtype=torch.float)
-        * (lut.domain_max[0] - lut.domain_min[0])
-        / (lut.size - 1)
-        + lut.domain_min[0]
-    )
+    x = torch.tensor(lut.get_x_axis())
     y = torch.tensor(lut.contents[:, 0], dtype=torch.float)
     return data.TensorDataset(x, y)
 
