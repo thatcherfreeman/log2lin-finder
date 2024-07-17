@@ -11,6 +11,181 @@ from torch import nn
 
 
 @dataclass
+class exp_arri_parameters:
+    a: float
+    b: float
+    c: float
+    d: float
+    e: float
+    f: float
+    cut: float
+
+    def error(self, other) -> float:
+        diffs = [
+            self.b / self.a - other.b / other.a,
+            self.c - other.c,
+            self.d - other.d,
+            self.e - other.e,
+            self.f - other.f,
+            self.cut - other.cut,
+        ]
+        return sum([abs(x) for x in diffs])
+
+    def __str__(self):
+        return f"a={self.a:0.3f} b={self.b:0.3f} c={self.c:0.3f} d={self.d:0.3f} e={self.e:0.3f} f={self.f:0.3f} cut={self.cut:0.3f}"
+
+    def log_curve_to_str(self):
+        output = f"""
+const float a = {self.a};
+const float b = {self.b};
+const float c = {self.c};
+const float d = {self.d};
+const float e = {self.e};
+const float f = {self.f};
+const float cut = {self.cut};
+
+if (x > cut) {{
+    return (c * _log10f(a * x + b) + d);
+}} else {{
+    return (e * x + f);
+}}
+        """
+        return output
+
+    def exp_curve_to_str(self):
+        output = f"""
+const float a = {self.a};
+const float b = {self.b};
+const float c = {self.c};
+const float d = {self.d};
+const float e = {self.e};
+const float f = {self.f};
+const float cut = {self.cut};
+
+if (t > (e * cut + f)) {{
+    return ((_exp10f((t - d) / c) - b) / a);
+}} else {{
+    return ((t - f) / e);
+}}
+"""
+        return output
+
+    def to_csv(self):
+        output = f"""name,value
+a,{self.a}
+b,{self.b}
+c,{self.c}
+d,{self.d}
+e,{self.e}
+f,{self.f}
+cut,{self.cut}
+"""
+        return output
+
+    @staticmethod
+    def from_csv(csv_fn: str) -> "exp_arri_parameters":
+        parsed_dict = {}
+        with open(csv_fn, "r") as f:
+            dict_reader = csv.DictReader(f)
+            for d in dict_reader:
+                parsed_dict[d["name"]] = float(d["value"])
+        return exp_arri_parameters(
+            a=parsed_dict["a"],
+            b=parsed_dict["b"],
+            c=parsed_dict["c"],
+            d=parsed_dict["d"],
+            e=parsed_dict["e"],
+            f=parsed_dict["f"],
+            cut=parsed_dict["cut"],
+        )
+
+
+EXP_ARRI_INITIAL_GUESS = exp_arri_parameters(
+    a=250.0,
+    b=-0.729169,
+    c=0.247190,
+    d=0.385537,
+    e=193.235573,
+    f=-0.662201,
+    cut=0.004201,
+)
+
+
+class exp_arri_function(nn.Module):
+    def __init__(self, parameters: exp_arri_parameters):
+        super(exp_arri_function, self).__init__()
+        self.a = nn.parameter.Parameter(torch.tensor(parameters.a))
+        self.b = nn.parameter.Parameter(torch.tensor(parameters.b))
+        self.c = nn.parameter.Parameter(torch.tensor(parameters.c))
+        self.d = nn.parameter.Parameter(torch.tensor(parameters.d))
+        self.e = nn.parameter.Parameter(torch.tensor(parameters.e))
+        self.f = nn.parameter.Parameter(torch.tensor(parameters.f))
+        self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
+
+    def compute_intermediate_values(self):
+        cut = self.cut
+        f = self.cut - (
+            self.e * (torch.pow(10.0, (self.cut - self.d) / self.c) - self.b) / self.a
+        )
+        # f = self.f
+        self.f = nn.parameter.Parameter(f, requires_grad=False)
+        return cut, f
+
+    def forward(self, t):
+        # self.d = nn.parameter.Parameter(1. - self.c * torch.log10(self.a + self.b), requires_grad=False)
+        # (t > e * cut + f) ? (pow(10, (t - d) / c) - b) / a: (t - f) / e
+        # self.f = self.cut - (self.e * (torch.pow(10., (self.cut - self.d) / self.c) - self.b) / self.a)
+        cut, f = self.compute_intermediate_values()
+
+        interp = (t > (self.e * cut + self.f)).float()
+
+        pow_value = (torch.pow(10.0, (t - self.d) / self.c) - self.b) / self.a
+        lin_value = (t - f) / self.e
+        output = interp * pow_value + (1 - interp) * lin_value
+        output = pow_value
+        # output = torch.clamp(output, min=1e-6) #, max=100)
+        return output
+
+    def reverse(self, x):
+        cut, f = self.compute_intermediate_values()
+
+        interp = (x > cut).float()
+        log_value = (
+            self.c * torch.log10(torch.clamp(self.a * x + self.b, min=1e-6)) + self.d
+        )
+        lin_value = self.e * x + f
+        output = interp * log_value + (1 - interp) * lin_value
+        output = log_value
+        output = torch.clamp(output, 0.0, 1.0)
+        return output
+
+    def get_log_parameters(self) -> exp_arri_parameters:
+        return exp_arri_parameters(
+            a=float(self.a),
+            b=float(self.b),
+            c=float(self.c),
+            d=float(self.d),
+            e=float(self.e),
+            f=float(self.f),
+            cut=float(self.cut),
+        )
+
+    def loss(
+        self,
+        black_point: torch.Tensor,
+        white_point: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        (cut, f) = self.compute_intermediate_values()
+        loss = torch.abs(
+            torch.minimum(cut - black_point, torch.zeros_like(black_point))
+        )
+        return loss
+        # loss = low_cut_penalty(black_point, self)
+        # loss += high_intercept_penalty(self)
+        # loss += 0.1 * smoothness_penalty(model)
+
+
+@dataclass
 class exp_parameters_simplified:
     # Based on Arri LogC3
     base: float
@@ -788,6 +963,11 @@ model_type = Union[
 ]
 
 MODEL_DICT = {
+    "exp_arri_function": (
+        exp_arri_function,
+        exp_arri_parameters,
+        EXP_ARRI_INITIAL_GUESS,
+    ),
     "exp_function": (
         exp_function_simplified,
         exp_parameters_simplified,

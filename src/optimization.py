@@ -18,29 +18,6 @@ import matplotlib.pyplot as plt  # type:ignore
 import numpy as np
 
 
-def derive_exp_function_gd_lut_v2(
-    lut: lut_1d_properties,
-    model_name: str,
-    epochs: int = 100,
-    lr=1e-3,
-    use_scheduler=True,
-    initial_parameters_fn=None,
-) -> nn.Module:
-    print(lut.get_x_axis())
-    return derive_exp_function_gd_log_lin_images(
-        log_image=np.tile(
-            np.tile(np.expand_dims(lut.get_x_axis(), 1), (1, 3)), (100, 1)
-        ),
-        lin_image=np.tile(lut.contents, (100, 1)),
-        black_point=np.min(lut.get_x_axis()),
-        model_name=model_name,
-        epochs=epochs,
-        lr=lr,
-        use_scheduler=use_scheduler,
-        initial_parameters_fn=initial_parameters_fn,
-    )
-
-
 def derive_exp_function_gd_lut(
     lut: lut_1d_properties,
     model_name: str,
@@ -65,7 +42,13 @@ def derive_exp_function_gd_lut(
             for x, y in dl:
                 optim.zero_grad()
                 y_pred = model(x)
-                loss = torch.log(loss_fn(torch.log(y_pred + 0.5), torch.log(y + 0.5)))
+                pred_mask = y_pred > 0.0
+                loss = torch.log(
+                    loss_fn(
+                        torch.log(y_pred[pred_mask] + 0.5),
+                        torch.log(y[pred_mask] + 0.5),
+                    )
+                )
                 error = loss_fn(y, y_pred).detach()
                 loss.backward()
                 optim.step()

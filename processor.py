@@ -9,7 +9,6 @@ from src.images import open_image
 from src.lut_parser import read_1d_lut, write_1d_lut, lut_1d_properties
 from src.optimization import (
     derive_exp_function_gd_lut,
-    derive_exp_function_gd_lut_v2,
     derive_exp_function_gd_log_lin_images,
     derive_exp_function_gd,
 )
@@ -289,8 +288,7 @@ def fit_two_images(args):
 
 def fit_lut_file(args):
     fn = args.lut_file
-    if args.lut_file == None:
-        parser.print_help()
+    assert args.lut_file, "LUT File needs to be provided with --lut_file!"
 
     # Train model
     lut = read_1d_lut(fn)
@@ -306,13 +304,15 @@ def fit_lut_file(args):
     print(parameters)
     print(parameters.exp_curve_to_str())
 
+    with open(os.path.join(os.path.dirname(args.lut_file), "parameters.csv"), "w") as f:
+        f.write(parameters.to_csv())
+
     # Display log2lin model's output curve vs original LUT
     ds = dataset_from_1d_lut(lut)
     x, y = ds.tensors
 
     model.eval()
     y_pred = model(x).detach().numpy()
-    print(y_pred)
     model.train()
     y_pred_interp = model(x).detach().numpy()
     x_np = x.numpy()
