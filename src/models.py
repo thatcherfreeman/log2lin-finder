@@ -19,17 +19,7 @@ class exp_arri_parameters:
     e: float
     f: float
     cut: float
-
-    def error(self, other) -> float:
-        diffs = [
-            self.b / self.a - other.b / other.a,
-            self.c - other.c,
-            self.d - other.d,
-            self.e - other.e,
-            self.f - other.f,
-            self.cut - other.cut,
-        ]
-        return sum([abs(x) for x in diffs])
+    mid_gray_scaling: float = 1.0
 
     def __str__(self):
         return f"a={self.a:0.3f} b={self.b:0.3f} c={self.c:0.3f} d={self.d:0.3f} e={self.e:0.3f} f={self.f:0.3f} cut={self.cut:0.3f}"
@@ -43,11 +33,13 @@ const float d = {self.d};
 const float e = {self.e};
 const float f = {self.f};
 const float cut = {self.cut};
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
-if (x > cut) {{
-    return (c * _log10f(a * x + b) + d);
+y /= mid_gray_scaling;
+if (y > cut) {{
+    return (c * _log10f(a * y + b) + d);
 }} else {{
-    return (e * x + f);
+    return (e * y + f);
 }}
         """
         return output
@@ -61,12 +53,16 @@ const float d = {self.d};
 const float e = {self.e};
 const float f = {self.f};
 const float cut = {self.cut};
+const float mid_gray_scaling = {self.mid_gray_scaling};
 
-if (t > (e * cut + f)) {{
-    return ((_exp10f((t - d) / c) - b) / a);
+float out;
+if (x > (e * cut + f)) {{
+    out = ((_exp10f((x - d) / c) - b) / a);
 }} else {{
-    return ((t - f) / e);
+    out = ((x - f) / e);
 }}
+out *= mid_gray_scaling;
+return out;
 """
         return output
 
@@ -79,6 +75,7 @@ d,{self.d}
 e,{self.e}
 f,{self.f}
 cut,{self.cut}
+mid_gray_scaling,{self.mid_gray_scaling}
 """
         return output
 
@@ -97,6 +94,7 @@ cut,{self.cut}
             e=parsed_dict["e"],
             f=parsed_dict["f"],
             cut=parsed_dict["cut"],
+            mid_gray_scaling=parsed_dict.get("mid_gray_scaling", 1.0),
         )
 
 
@@ -159,7 +157,13 @@ class exp_arri_function(nn.Module):
         output = torch.clamp(output, 0.0, 1.0)
         return output
 
-    def get_log_parameters(self) -> exp_arri_parameters:
+    def get_log_parameters(
+        self, target_mid_gray: Optional[float] = None
+    ) -> exp_arri_parameters:
+        mid_gray_scaling = 1.0
+        if target_mid_gray is not None:
+            output_mid_gray = self.forward(target_mid_gray)
+            mid_gray_scaling = 0.18 / output_mid_gray
         return exp_arri_parameters(
             a=float(self.a),
             b=float(self.b),
@@ -168,6 +172,7 @@ class exp_arri_function(nn.Module):
             e=float(self.e),
             f=float(self.f),
             cut=float(self.cut),
+            mid_gray_scaling=float(mid_gray_scaling),
         )
 
     def loss(
