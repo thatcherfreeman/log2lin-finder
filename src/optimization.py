@@ -121,12 +121,12 @@ def derive_exp_function_gd_log_lin_images(
                 error = log_lin_image_error(log_pixels, log_pred)
                 loss = torch.tensor(0.0, device=device)
                 loss += error
-                loss += log_lin_image_error(
-                    torch.log10(torch.max(lin_pixels, torch.tensor(1e-8))),
-                    torch.log10(torch.max(lin_pred, torch.tensor(1e-8))),
-                )
-                loss += negative_linear_values_penalty(lin_pred)
-                loss += 0.1 * model.loss(black_point_t, None)
+                # loss += log_lin_image_error(
+                #     torch.log10(torch.max(lin_pixels, torch.tensor(1e-8))),
+                #     torch.log10(torch.max(lin_pred, torch.tensor(1e-8))),
+                # )
+                # loss += negative_linear_values_penalty(lin_pred)
+                # loss += 0.1 * model.loss(black_point_t, None)
 
                 loss.backward()
                 optim.step()

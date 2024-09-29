@@ -58,14 +58,13 @@ def read_1d_lut(fname: str) -> lut_1d_properties:
     lut_1d_size_pat = r"LUT_1D_SIZE (\d+)"
     domain_min_pat = r"DOMAIN_MIN ([\d\.]+ [\d\.]+ [\d\.]+)"
     domain_max_pat = r"DOMAIN_MAX ([\d\.]+ [\d\.]+ [\d\.]+)"
-    line_pat = r"^([\d\.]+ [\d\.]+ [\d\.]+)"
+    line_pat = r"^([-\de\.]+ [-\de\.]+ [-\de\.]+)"
 
     with open(fname, "r") as f:
         contents = []
         properties = lut_1d_properties()
-
-        line = f.readline()
-        while line != "":
+        lines = f.readlines()
+        for line in lines:
             if match := re.match(line_pat, line):
                 entries = match.group(1).split(" ")
                 entries = [float(x) for x in entries]
@@ -84,7 +83,6 @@ def read_1d_lut(fname: str) -> lut_1d_properties:
                 maxs = match.group(1).split(" ")
                 maxs = [float(x) for x in maxs]
                 properties.domain_max = np.array(maxs)
-            line = f.readline()
         assert properties.size == len(
             contents
         ), "LUT size disagrees with content length!"
