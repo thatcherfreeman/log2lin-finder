@@ -887,8 +887,8 @@ mid_gray_scaling,{self.mid_gray_scaling}
 
 
 PURE_EXP_INTIAL_GUESS = pure_exp_parameters(
-    base=100,
-    offset=-1,
+    base=100.0,
+    offset=-1.0,
     scale=0.01,
     mid_gray_scaling=1.0,
 )
