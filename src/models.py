@@ -162,7 +162,7 @@ class exp_arri_function(nn.Module):
     ) -> exp_arri_parameters:
         mid_gray_scaling = 1.0
         if target_mid_gray is not None:
-            output_mid_gray = self.forward(target_mid_gray)
+            output_mid_gray = self.forward(torch.tensor(target_mid_gray))
             mid_gray_scaling = 0.18 / output_mid_gray
         return exp_arri_parameters(
             a=float(self.a),
@@ -381,7 +381,7 @@ class exp_function_simplified(nn.Module):
     ) -> exp_parameters_simplified:
         mid_gray_scaling = 1.0
         if target_mid_gray is not None:
-            output_mid_gray = self.forward(target_mid_gray)
+            output_mid_gray = self.forward(torch.tensor(target_mid_gray))
             mid_gray_scaling = 0.18 / output_mid_gray
         base, offset, scale, slope, intercept, cut = self.compute_intermediate_values()
         return exp_parameters_simplified(
@@ -531,10 +531,10 @@ class legacy_exp_function(nn.Module):
         scale = self.scale
         intercept = self.intercept
         # cut = self.cut
-        slope2 = self.slope2
+        slope2 = torch.maximum(self.slope2, torch.tensor(1e-6))
         # cut * slope2 = cut * slope + intercept
         # Solve for slope
-        slope = self.slope
+        slope = torch.maximum(self.slope, torch.tensor(1e-6))
         # slope = torch.abs((self.cut * self.slope2 - self.intercept) / torch.abs(self.cut))
         cut = intercept / torch.abs(slope2 - slope)
         return x_shift, y_shift, scale, slope, slope2, intercept, cut
@@ -598,7 +598,7 @@ class legacy_exp_function(nn.Module):
     ) -> legacy_exp_function_parameters:
         mid_gray_scaling = 1.0
         if target_mid_gray is not None:
-            output_mid_gray = self.forward(target_mid_gray)
+            output_mid_gray = self.forward(torch.tensor(target_mid_gray))
             mid_gray_scaling = 0.18 / output_mid_gray
         (
             x_shift,
@@ -755,7 +755,9 @@ class gamma_function(nn.Module):
             intercept,
             cut,
         ) = self.compute_intermediate_values()
-        pow_value = torch.pow(torch.clamp(t, min=1e-8), gamma) * scale + offset
+        pow_value = (
+            torch.pow(torch.maximum(t, torch.tensor(1e-8)), gamma) * scale + offset
+        )
         interp = (t > cut).float()
         lin_value = t * slope + intercept
         output = interp * pow_value + (1 - interp) * lin_value
@@ -801,7 +803,7 @@ class gamma_function(nn.Module):
     ) -> gamma_function_parameters:
         mid_gray_scaling = 1.0
         if target_mid_gray is not None:
-            output_mid_gray = self.forward(target_mid_gray)
+            output_mid_gray = self.forward(torch.tensor(target_mid_gray))
             mid_gray_scaling = 0.18 / output_mid_gray
         (
             gamma,
@@ -942,7 +944,7 @@ class pure_exp_function(nn.Module):
     ) -> pure_exp_parameters:
         mid_gray_scaling = 1.0
         if target_mid_gray is not None:
-            output_mid_gray = self.forward(target_mid_gray)
+            output_mid_gray = self.forward(torch.tensor(target_mid_gray))
             mid_gray_scaling = 0.18 / output_mid_gray
         (
             base,
