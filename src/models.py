@@ -360,7 +360,7 @@ class exp_function_simplified(nn.Module):
         pow_value = scale * torch.pow(base, t) + offset
         lin_value = slope * t + intercept
         output = interp * pow_value + (1 - interp) * lin_value
-        # output = torch.clamp(output, min=1e-6)
+        output = torch.clamp(output, min=1e-8)
         return output
 
     def reverse(self, y):
