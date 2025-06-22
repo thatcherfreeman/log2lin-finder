@@ -55,7 +55,9 @@
 \fancyhead{} % Blank out the default header
 \fancyfoot{} % Blank out the default footer
 % \fancyhead[C]{Running title $\bullet$ May 2016 $\bullet$ Vol. XXI, No. 1} % Custom header text
-\fancyfoot[C]{\thepage} % Custom footer text
+
+% \fancyfoot[C]{\shortstack{\thepage \\ \\ \small Thatcher Imaging LLC | BEARE MEDIA (PTY) LTD | Not for Redistribution}}
+\fancyfoot[C]{\thepage}
 
 \usepackage{titling} % Customizing the title section
 
@@ -72,6 +74,7 @@
 \title{Guidelines for Camera Profiling} % Article title
 \author{%
     \textsc{Thatcher Freeman} \\[1ex] % Your name
+    % \normalsize \href{mailto:thatcher@mishabeare.com}{thatcher@mishabeare.com}
     \normalsize \href{https://github.com/thatcherfreeman}{github.com/thatcherfreeman}
 }
 \date{}%\today} % Leave empty to omit a date
@@ -87,6 +90,7 @@
 
 % Print the title
 \maketitle
+\thispagestyle{fancy}
 
 %----------------------------------------------------------------------------------------
 %	ARTICLE CONTENTS
@@ -244,7 +248,7 @@ Here we simply require a properly exposed shot of a Macbeth Chart/ColorChecker d
     \item \textbf{High quality light} - This test requires that you use an Incadescent light bulb rather than an LED light that merely simulates the illumination of a hot filament.
     \item \textbf{Correct White Balance} - The camera should be white balanced for this light source. Small discrepancies will be corrected via a small RGB gain adjustment, but the camera should be in the right ballpark for the shot.
     \item \textbf{Even lighting on the color chart} - Place the light farther from the test chart so that there aren't light fall-off problems (at least 4x the length of the long side of the test chart away).
-    \item \textbf{Color chart fills the middle third of the image} - This is a compromise between maximizing the number of pixels we can sample for each color chip, and avoiding lens vignetting.
+    \item \textbf{Color chart fills the middle third of the image} - This is a compromise between maximizing the number of pixels we can sample for each color chip, and avoiding lens vignetting. Fill the middle rule of thirds box with the color chart.
     \item \textbf{No light modifiers} - The bulb should not be covered by a lampshade or a softbox that may discolor the image, and likewise it should not be bounced off of colored walls.
     \item \textbf{Lens stopped down a couple stops} - By stopping down the lens, contrast and flare are typically improved. Pick an aperture in the range of f/4-f/8, if possible.
 \end{enumerate}
@@ -295,5 +299,39 @@ Follow the same procedure as the ColorChecker under Daylight. The Color chart in
 \end{enumerate}
 
 %----------------------------------------------------------------------------------------
+
+\section{Other Tests}
+
+\subsection{ISO Invariance Test}
+Some cameras have analog amplifiers with a fixed gain, and ISO controls an amount of digital amplification downstream of this analog gain. Sensors with this design are ISO invariant, meaning that changing the ISO is no different than adjusting gain in post. This design is common in Arri, RED, and Blackmagic cameras. Other cameras use ISO to control analog gain, and therefore raising the ISO can improve the camera's performance in low light and reduce the amount of noise in the shadows. This design is found in some Canon and Z-Cam cameras. \\
+
+\subsubsection{Procedure}
+To test for ISO invariance, we will shoot a scene that has some darker shadows at the base ISO. The ISO is then raised (within the same gain circuit if the camera has multiple base ISOs) without changing any other exposure settings and another clip is shot. In post, we will match the two exposures and compare noise in the shadow regions. This test should be repeated for each base ISO.
+
+\subsubsection{Requirements}
+\begin{enumerate}
+    \item \textbf{Stationary camera} - The camera should be locked off so that the two shots are directly comparable.
+    \item \textbf{Same lens, aperture, and shutter speed} - The camera's exposure settings should not change between the two shots.
+    \item \textbf{Dark shadows} - The scene should have a range of tones, particularly including those that reach into the shadows.
+\end{enumerate}
+
+\subsection{Exposure Recommendation Test}
+The manufacturer's recommended exposure for cameras may not align with the desired cleanliness for the finished product. This test will allow you to determine the best exposure level for your camera, for your project, and to determine which ISOs are acceptable for shooting. \\
+
+\subsubsection{Procedure}
+Set up some scene with a representative subject, including ideally a human, a range of colors (such as a color chart), and a lighting contrast ratio that is representative of the project. Then, for each ISO, shoot an exposure bracket from -1.5 stops underexposed to +1.5 stops overexposed in 0.5 stop increment. The base exposure should be determined either via light meter, via the camera's light meter, or under a generic display LUT (which will later be substituted with a show LUT), depending on what is intended to be used on the project. \\
+
+If the camera is ISO invariant, then only the base ISOs need to be tested, but if the camera is not ISO invariant, then all ISOs in one-stop increments should be tested. \\
+
+\subsubsection{Requirements}
+\begin{enumerate}
+    \item \textbf{Exposure Bracket via Shutter Speed and Aperture} - Change the exposure using shutter speed and aperture so that we can get accurate increments of exposure. It is recommended to start with a 360 degree shutter and wider aperture for the lowest ISO so there is a lot of room to stop down.
+    \item \textbf{Fixed Lighting} - The lighting should not change over the course of the exposure bracket, so that contrast ratios are preserved and the clips are comparable.
+\end{enumerate}
+
+\subsubsection{Non-Requirements}
+\begin{enumerate}
+    \item \textbf{Unchanged shot} - Feel free to have a whiteboard to indicate which exposure is being shot. As this test is more qualitative, the alignment requirements are not as strict as for the OETF profiling.
+\end{enumerate}
 
 \end{document}
