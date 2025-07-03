@@ -306,13 +306,13 @@ Follow the same procedure as the ColorChecker under Daylight. The Color chart in
 Some cameras have analog amplifiers with a fixed gain, and ISO controls an amount of digital amplification downstream of this analog gain. Sensors with this design are ISO invariant, meaning that changing the ISO is no different than adjusting gain in post. This design is common in Arri, RED, and Blackmagic cameras. Other cameras use ISO to control analog gain, and therefore raising the ISO can improve the camera's performance in low light and reduce the amount of noise in the shadows. This design is found in some Canon and Z-Cam cameras. \\
 
 \subsubsection{Procedure}
-To test for ISO invariance, we will shoot a scene that has some darker shadows at the base ISO. The ISO is then raised (within the same gain circuit if the camera has multiple base ISOs) without changing any other exposure settings and another clip is shot. In post, we will match the two exposures and compare noise in the shadow regions. This test should be repeated for each base ISO.
+To test for ISO invariance, we will shoot a scene that is very underexposed (ie -6 stops) at the camera's lowest ISO. The ISO is then raised in one-stop increments without changing any other exposure settings and a clip is shot for each of these ISOs. In post, we will match the exposures and compare noise in the shadow regions. Make sure to include a shot of each base ISO too as additional exposures, in case those were skipped by the one-stop increments.
 
 \subsubsection{Requirements}
 \begin{enumerate}
     \item \textbf{Stationary camera} - The camera should be locked off so that the two shots are directly comparable.
     \item \textbf{Same lens, aperture, and shutter speed} - The camera's exposure settings should not change between the two shots.
-    \item \textbf{Dark shadows} - The scene should have a range of tones, particularly including those that reach into the shadows.
+    \item \textbf{Dark shadows} - The scene should have a range of tones, particularly including those that reach into the shadows. Highlights are appreciated too, so that the clipping behavior can be compared between ISOs.
 \end{enumerate}
 
 \subsection{Exposure Recommendation Test}
