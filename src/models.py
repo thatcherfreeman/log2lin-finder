@@ -825,6 +825,222 @@ class gamma_function(nn.Module):
 
 
 @dataclass
+class hlg_parameters:
+    slope: float
+    offset: float
+    offset2: float
+    power: float
+    cut: float
+    a: float
+    b: float
+    c: float
+    mid_gray_scaling: float = 1.0
+
+    def __str__(self):
+        return f"slope={self.slope:0.3f} offset={self.offset:0.3f} offset2={self.offset2:0.3f} power={self.power:0.3f} cut={self.cut:0.3f} a={self.a:0.3f} b={self.b:0.3f} c={self.c:0.3f}"
+
+    def log_curve_to_str(self):
+        # lin to log
+        output = f"""
+const float slope = {self.slope};
+const float offset = {self.offset};
+const float offset2 = {self.offset2};
+const float power = {self.power};
+const float cut = {self.cut};
+const float a = {self.a};
+const float b = {self.b};
+const float c = {self.c};
+
+x /= mid_gray_scaling;
+if (x < cut) {{
+    return powf(x * slope + offset, power) + offset2;
+}} else {{
+    return a * _logf( x / cut - b ) + c;
+}}
+"""
+        return output
+
+    def exp_curve_to_str(self):
+        # log to lin
+        output = f"""
+const float slope = {self.slope};
+const float offset = {self.offset};
+const float offset2 = {self.offset2};
+const float power = {self.power};
+const float cut = {self.cut};
+const float a = {self.a};
+const float b = {self.b};
+const float c = {self.c};
+const float mid_gray_scaling = {self.mid_gray_scaling};
+
+const float log_cut = powf(cut * slope + offset, power) + offset2;
+
+if (x < log_cut) {{
+    return (powf(x - offset2, 1.0 / power) - offset) / slope;
+}} else {{
+    return (_expf((x - c) / a) + b) * cut;
+}}
+"""
+        return output
+
+    def to_csv(self):
+        output = f"""name,value
+slope,{self.slope}
+offset,{self.offset}
+offset2,{self.offset2}
+power,{self.power}
+cut,{self.cut}
+a,{self.a}
+b,{self.b}
+c,{self.c}
+mid_gray_scaling,{self.mid_gray_scaling}
+"""
+        return output
+
+    @staticmethod
+    def from_csv(csv_fn: str) -> "hlg_parameters":
+        parsed_dict = {}
+        with open(csv_fn, "r") as f:
+            dict_reader = csv.DictReader(f)
+            for d in dict_reader:
+                parsed_dict[d["name"]] = float(d["value"])
+        return hlg_parameters(
+            slope=parsed_dict["slope"],
+            offset=parsed_dict["offset"],
+            offset2=parsed_dict["offset2"],
+            power=parsed_dict["power"],
+            cut=parsed_dict["cut"],
+            a=parsed_dict["a"],
+            b=parsed_dict["b"],
+            c=parsed_dict["c"],
+            mid_gray_scaling=parsed_dict.get("mid_gray_scaling", 1.0),
+        )
+
+
+HLG_PARAMETERS_INITIAL_GUESS = hlg_parameters(
+    slope=3.0**0.5,
+    offset=0.0,
+    offset2=0.0,
+    power=0.5,
+    cut=1.0 / 12.0,
+    a=0.17883277,
+    b=0.28466892,
+    c=0.55991073,
+    mid_gray_scaling=1.0,
+)
+
+
+class hlg_function(nn.Module):
+    def __init__(self, parameters: hlg_parameters):
+        super(hlg_function, self).__init__()
+        self.slope = nn.parameter.Parameter(torch.tensor(parameters.slope))
+        self.offset = torch.tensor(parameters.offset)
+        self.offset2 = nn.parameter.Parameter(torch.tensor(parameters.offset2))
+        self.power = nn.parameter.Parameter(torch.tensor(parameters.power))
+        self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
+        self.a = nn.parameter.Parameter(torch.tensor(parameters.a))
+        self.b = nn.parameter.Parameter(torch.tensor(parameters.b))
+        self.c = nn.parameter.Parameter(torch.tensor(parameters.c))
+
+    def compute_intermediate_values(self):
+        offset = self.offset
+        offset2 = self.offset2
+        power = torch.clamp(self.power, min=0.1, max=0.9)
+        cut = self.cut
+        a = self.a
+        b = self.b
+        c = self.c
+        # (((cut * slope) + offset) ** power) + offset2 == a * log((cut / cut) - b) + c
+        # slope = (((a * log((cut / cut) - b) + c - offset2) ** (1.0 / power)) - offset) / cut
+        slope = (
+            torch.pow(
+                a * torch.log(torch.clamp(1.0 - b, min=1e-8)) + c - offset2, 1.0 / power
+            )
+            - offset
+        ) / cut
+        return slope, offset, offset2, power, cut, a, b, c
+
+    def forward(self, t):
+        # log to lin
+        (
+            slope,
+            offset,
+            offset2,
+            power,
+            cut,
+            a,
+            b,
+            c,
+        ) = self.compute_intermediate_values()
+        log_cut = torch.pow(cut * slope + offset, power) + offset2
+        exp_value = torch.where(
+            t < log_cut,
+            (torch.pow(torch.clamp(t - offset2, min=1e-8), 1.0 / power) - offset)
+            / slope,
+            (torch.exp((t - c) / a) + b) * cut,
+        )
+        output = exp_value
+        return output
+
+    def reverse(self, t):
+        # lin to log
+        (
+            slope,
+            offset,
+            offset2,
+            power,
+            cut,
+            a,
+            b,
+            c,
+        ) = self.compute_intermediate_values()
+        log_value = torch.where(
+            t < cut,
+            torch.pow(torch.clamp(t * slope + offset, min=1e-8), power) + offset2,
+            a * torch.log(torch.clamp(t / cut - b, min=1e-8)) + c,
+        )
+        output = torch.clamp(log_value, 0.0, 1.0)
+        return output
+
+    def loss(
+        self,
+        black_point: torch.Tensor,
+        white_point: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        loss = torch.tensor(0.0)
+        return loss
+
+    def get_log_parameters(
+        self, target_mid_gray: Optional[float] = None
+    ) -> hlg_parameters:
+        mid_gray_scaling = 1.0
+        if target_mid_gray is not None:
+            output_mid_gray = self.forward(torch.tensor(target_mid_gray))
+            mid_gray_scaling = 0.18 / output_mid_gray
+        (
+            slope,
+            offset,
+            offset2,
+            power,
+            cut,
+            a,
+            b,
+            c,
+        ) = self.compute_intermediate_values()
+        return hlg_parameters(
+            slope=float(slope),
+            offset=float(offset),
+            offset2=float(offset2),
+            power=float(power),
+            cut=float(cut),
+            a=float(a),
+            b=float(b),
+            c=float(c),
+            mid_gray_scaling=float(mid_gray_scaling),
+        )
+
+
+@dataclass
 class pure_exp_parameters:
     # Pure log/power function based on gopro log.
     base: float
@@ -964,9 +1180,14 @@ parameters_type = Union[
     legacy_exp_function_parameters,
     gamma_function_parameters,
     pure_exp_parameters,
+    hlg_parameters,
 ]
 model_type = Union[
-    exp_function_simplified, legacy_exp_function, gamma_function, pure_exp_function
+    exp_function_simplified,
+    legacy_exp_function,
+    gamma_function,
+    pure_exp_function,
+    hlg_function,
 ]
 
 MODEL_DICT = {
@@ -994,6 +1215,11 @@ MODEL_DICT = {
         pure_exp_function,
         pure_exp_parameters,
         PURE_EXP_INTIAL_GUESS,
+    ),
+    "hlg": (
+        hlg_function,
+        hlg_parameters,
+        HLG_PARAMETERS_INITIAL_GUESS,
     ),
 }
 
