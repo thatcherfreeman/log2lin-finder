@@ -117,7 +117,6 @@ class exp_arri_function(nn.Module):
         self.c = nn.parameter.Parameter(torch.tensor(parameters.c))
         self.d = nn.parameter.Parameter(torch.tensor(parameters.d))
         self.e = nn.parameter.Parameter(torch.tensor(parameters.e))
-        self.f = nn.parameter.Parameter(torch.tensor(parameters.f))
         self.cut = nn.parameter.Parameter(torch.tensor(parameters.cut))
 
     def compute_intermediate_values(self):
@@ -125,8 +124,6 @@ class exp_arri_function(nn.Module):
         f = self.cut - (
             self.e * (torch.pow(10.0, (self.cut - self.d) / self.c) - self.b) / self.a
         )
-        # f = self.f
-        self.f = nn.parameter.Parameter(f, requires_grad=False)
         return cut, f
 
     def forward(self, t):
@@ -135,12 +132,11 @@ class exp_arri_function(nn.Module):
         # self.f = self.cut - (self.e * (torch.pow(10., (self.cut - self.d) / self.c) - self.b) / self.a)
         cut, f = self.compute_intermediate_values()
 
-        interp = (t > (self.e * cut + self.f)).float()
+        interp = (t > (self.e * cut + f)).float()
 
         pow_value = (torch.pow(10.0, (t - self.d) / self.c) - self.b) / self.a
         lin_value = (t - f) / self.e
         output = interp * pow_value + (1 - interp) * lin_value
-        output = pow_value
         # output = torch.clamp(output, min=1e-6) #, max=100)
         return output
 
@@ -160,6 +156,7 @@ class exp_arri_function(nn.Module):
     def get_log_parameters(
         self, target_mid_gray: Optional[float] = None
     ) -> exp_arri_parameters:
+        cut, f = self.compute_intermediate_values()
         mid_gray_scaling = 1.0
         if target_mid_gray is not None:
             output_mid_gray = self.forward(torch.tensor(target_mid_gray))
@@ -170,8 +167,8 @@ class exp_arri_function(nn.Module):
             c=float(self.c),
             d=float(self.d),
             e=float(self.e),
-            f=float(self.f),
-            cut=float(self.cut),
+            f=float(f),
+            cut=float(cut),
             mid_gray_scaling=float(mid_gray_scaling),
         )
 
@@ -182,8 +179,10 @@ class exp_arri_function(nn.Module):
     ) -> torch.Tensor:
         (cut, f) = self.compute_intermediate_values()
         loss = torch.abs(
-            torch.minimum(cut - black_point, torch.zeros_like(black_point))
+            torch.minimum(cut, torch.zeros_like(black_point))
         )
+        # black_point_lin = self.forward(black_point)
+        # loss += torch.abs(black_point_lin)
         return loss
         # loss = low_cut_penalty(black_point, self)
         # loss += high_intercept_penalty(self)
