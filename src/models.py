@@ -56,11 +56,11 @@ const float cut = {self.cut};
 const float mid_gray_scaling = {self.mid_gray_scaling};
 
 float out;
-// if (x > (e * cut + f)) {{
+if (x > (e * cut + f)) {{
     out = ((_exp10f((x - d) / c) - b) / a);
-// }} else {{
-//     out = ((x - f) / e);
-// }}
+}} else {{
+    out = ((x - f) / e);
+}}
 out *= mid_gray_scaling;
 return out;
 """
