@@ -677,8 +677,6 @@ if (x < y_cut) {{
 }}
 out *= mid_gray_scaling;
 return out;
-
-
 """
         return output
 
