@@ -651,7 +651,7 @@ float out;
 if (x < cut) {{
     out = x * slope + intercept;
 }} else {{
-    out = scale * powf(x, gamma) + offset;
+    out = scale * _powf(x, gamma) + offset;
 }}
 return out;
 """
@@ -673,7 +673,7 @@ float out;
 if (x < y_cut) {{
     out = (x - intercept) / slope;
 }} else {{
-    out = powf((x - offset) / scale, 1.0 / gamma);
+    out = _powf((x - offset) / scale, 1.0 / gamma);
 }}
 out *= mid_gray_scaling;
 return out;
