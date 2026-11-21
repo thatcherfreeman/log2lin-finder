@@ -644,15 +644,16 @@ const float scale = {self.scale};
 const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
-const float y_cut = cut * slope + intercept;
 const float mid_gray_scaling = {self.mid_gray_scaling};
 
 x /= mid_gray_scaling;
-if (x < y_cut) {{
-    return (x - intercept) / slope;
+float out;
+if (x < cut) {{
+    out = x * slope + intercept;
 }} else {{
-    return powf((x - offset) / scale, 1.0 / gamma);
+    out = scale * powf(x, gamma) + offset;
 }}
+return out;
 """
         return output
 
@@ -665,16 +666,19 @@ const float scale = {self.scale};
 const float slope = {self.slope};
 const float intercept = {self.intercept};
 const float cut = {self.cut};
+const float y_cut = cut * slope + intercept;
 const float mid_gray_scaling = {self.mid_gray_scaling};
 
 float out;
-if (x < cut) {{
-    out = x * slope + intercept;
+if (x < y_cut) {{
+    out = (x - intercept) / slope;
 }} else {{
-    out = scale * powf(x, gamma) + offset;
+    out = powf((x - offset) / scale, 1.0 / gamma);
 }}
 out *= mid_gray_scaling;
 return out;
+
+
 """
         return output
 
@@ -744,25 +748,8 @@ class gamma_function(nn.Module):
         ) / torch.abs(self.cut)
         return gamma, offset, scale, slope, intercept, cut
 
-    def forward(self, t):
+    def forward(self, y):
         # log to lin
-        (
-            gamma,
-            offset,
-            scale,
-            slope,
-            intercept,
-            cut,
-        ) = self.compute_intermediate_values()
-        pow_value = (
-            torch.pow(torch.maximum(t, torch.tensor(1e-8)), gamma) * scale + offset
-        )
-        interp = (t > cut).float()
-        lin_value = t * slope + intercept
-        output = interp * pow_value + (1 - interp) * lin_value
-        return output
-
-    def reverse(self, y):
         (
             gamma,
             offset,
@@ -777,6 +764,24 @@ class gamma_function(nn.Module):
         interp = (y > y_cut).float()
         output = interp * pow_value + (1 - interp) * lin_value
         output = torch.clamp(output, 0.0, 1.0)
+        return output
+
+    def reverse(self, t):
+        # lin to log
+        (
+            gamma,
+            offset,
+            scale,
+            slope,
+            intercept,
+            cut,
+        ) = self.compute_intermediate_values()
+        pow_value = (
+            torch.pow(torch.maximum(t, torch.tensor(1e-8)), gamma) * scale + offset
+        )
+        interp = (t > cut).float()
+        lin_value = t * slope + intercept
+        output = interp * pow_value + (1 - interp) * lin_value
         return output
 
     def loss(
